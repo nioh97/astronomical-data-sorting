@@ -117,10 +117,13 @@ export default function DataIngestionSection() {
   }
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">Multi-Source Data Ingestion</h2>
+    <section className="space-y-8 bg-white rounded-xl border border-slate-200 p-10 shadow-sm hover:shadow-md transition-shadow duration-300">
+      <div className="flex items-center gap-3">
+        <Upload className="w-6 h-6 text-slate-600" strokeWidth={1.5} />
+        <h2 className="text-3xl font-bold text-slate-900 section-header-underline">Multi-Source Data Ingestion</h2>
+      </div>
 
-      <Card className="p-6 border-2 border-dashed border-slate-300 bg-slate-50">
+      <Card className="p-6 border-2 border-dashed border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/30 transition-all duration-200">
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <Upload className="w-5 h-5 text-slate-600" />
@@ -162,7 +165,7 @@ export default function DataIngestionSection() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {ingestedDatasets.map((ds, idx) => (
-          <Card key={idx} className="p-6 hover:shadow-md transition-shadow">
+          <Card key={idx} className="p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
@@ -215,7 +218,7 @@ export default function DataIngestionSection() {
 
             <Button
               variant="outline"
-              className="w-full"
+              className="w-full hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 hover:border-blue-300 transition-all duration-200"
               disabled={ds.status !== "completed"}
             >
               {ds.status === "completed" ? "View Details" : "Processing..."}

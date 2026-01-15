@@ -37,6 +37,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Subtle blue/purple gradient accent for research platform */
+  --accent-blue: oklch(0.55 0.15 250);
+  --accent-purple: oklch(0.55 0.12 280);
+  --accent-gradient: linear-gradient(135deg, oklch(0.55 0.15 250), oklch(0.55 0.12 280));
 }
 
 .dark {
@@ -121,5 +125,37 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Subtle transitions for micro-interactions */
+  .transition-smooth {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  /* Accent gradient text */
+  .text-accent-gradient {
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Section header underline */
+  .section-header-underline {
+    position: relative;
+    padding-bottom: 0.75rem;
+  }
+  
+  .section-header-underline::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 3rem;
+    height: 3px;
+    background: var(--accent-gradient);
+    border-radius: 2px;
   }
 }

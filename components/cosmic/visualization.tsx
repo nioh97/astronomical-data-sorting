@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts"
+import { BarChart3 } from "lucide-react"
 
 export default function VisualizationSection() {
   const distanceBrightnessData = [
@@ -30,17 +31,20 @@ export default function VisualizationSection() {
   ]
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">Data Visualization & Analysis</h2>
+    <section className="space-y-8 bg-white rounded-xl border border-slate-200 p-10 shadow-sm hover:shadow-md transition-shadow duration-300">
+      <div className="flex items-center gap-3">
+        <BarChart3 className="w-6 h-6 text-slate-600" strokeWidth={1.5} />
+        <h2 className="text-3xl font-bold text-slate-900 section-header-underline">Data Visualization & Analysis</h2>
+      </div>
 
-      <div className="text-sm text-slate-700 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+      <div className="text-sm text-slate-700 bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-5 mb-6">
         These visualizations demonstrate the power of unified data fusion: cross-agency comparison is now possible
         because all data is standardized and harmonized.
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Scatter Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow duration-200">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Distance vs Brightness</h3>
           <ResponsiveContainer width="100%" height={300}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -71,7 +75,7 @@ export default function VisualizationSection() {
         </div>
 
         {/* Bar Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow duration-200">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Objects per Source Agency</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={agencyCountData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>

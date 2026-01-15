@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Download, Search } from "lucide-react"
+import { Download, Search, Archive } from "lucide-react"
 import { useDataContext } from "@/lib/data-context"
 import { StandardizedData } from "@/lib/standardization"
 
@@ -94,10 +94,13 @@ export default function UnifiedRepositorySection() {
   }, [unifiedData])
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">Unified Astronomical Dataset Repository</h2>
+    <section className="space-y-8 bg-white rounded-xl border border-slate-200 p-10 shadow-sm hover:shadow-md transition-shadow duration-300">
+      <div className="flex items-center gap-3">
+        <Archive className="w-6 h-6 text-slate-600" strokeWidth={1.5} />
+        <h2 className="text-3xl font-bold text-slate-900 section-header-underline">Unified Astronomical Dataset Repository</h2>
+      </div>
 
-      <Card className="p-6 border-slate-200">
+      <Card className="p-6 border-slate-200 hover:shadow-md transition-shadow duration-200">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div>
             <label className="text-sm text-slate-700 font-medium block mb-2">Filter by Agency</label>
@@ -151,7 +154,7 @@ export default function UnifiedRepositorySection() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100">
                 <th className="text-left py-3 px-4 text-slate-900 font-semibold">Object ID</th>
                 <th className="text-left py-3 px-4 text-slate-900 font-semibold">Type</th>
                 <th className="text-left py-3 px-4 text-slate-900 font-semibold">RA (°)</th>
@@ -164,13 +167,16 @@ export default function UnifiedRepositorySection() {
             <tbody>
               {filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-500">
-                    No objects found matching your filters
+                  <td colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-slate-400">
+                      <Search className="w-8 h-8" strokeWidth={1.5} />
+                      <p className="text-slate-500">No objects found matching your filters</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
                 filteredData.map((row, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition">
+                  <tr key={idx} className="border-b border-slate-100 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-purple-50/50 transition-colors duration-150">
                     <td className="py-3 px-4 font-mono text-slate-800">{row.object_id}</td>
                     <td className="py-3 px-4 text-slate-700">{row.object_type}</td>
                     <td className="py-3 px-4 text-slate-600">{row.ra.toFixed(2)}</td>
@@ -198,7 +204,7 @@ export default function UnifiedRepositorySection() {
         </div>
 
         <div className="flex justify-end mt-6">
-          <Button onClick={handleExport} className="gap-2">
+          <Button onClick={handleExport} className="gap-2 hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 transition-all duration-200">
             <Download className="w-4 h-4" />
             Export Dataset (CSV)
           </Button>

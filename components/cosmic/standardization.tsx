@@ -1,13 +1,18 @@
+import { RefreshCw } from "lucide-react"
+
 export default function StandardizationSection() {
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">Standardization & Harmonization</h2>
+    <section className="space-y-8 bg-white rounded-xl border border-slate-200 p-10 shadow-sm hover:shadow-md transition-shadow duration-300">
+      <div className="flex items-center gap-3">
+        <RefreshCw className="w-6 h-6 text-slate-600" strokeWidth={1.5} />
+        <h2 className="text-3xl font-bold text-slate-900 section-header-underline">Standardization & Harmonization</h2>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Before */}
-        <div>
+        <div className="hover:scale-[1.01] transition-transform duration-200">
           <h3 className="text-lg font-semibold text-red-700 mb-4">Before Standardization</h3>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 overflow-x-auto">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 overflow-x-auto hover:shadow-md transition-shadow duration-200">
             <div className="space-y-2">
               <div className="text-xs text-slate-600 uppercase tracking-wide font-medium">Dataset A (NASA)</div>
               <table className="w-full text-xs">
@@ -57,9 +62,9 @@ export default function StandardizationSection() {
         </div>
 
         {/* After */}
-        <div>
+        <div className="hover:scale-[1.01] transition-transform duration-200">
           <h3 className="text-lg font-semibold text-green-700 mb-4">After Standardization</h3>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 overflow-x-auto">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 overflow-x-auto hover:shadow-md transition-shadow duration-200">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-green-200">
@@ -92,8 +97,8 @@ export default function StandardizationSection() {
         </div>
       </div>
 
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-        <h3 className="text-sm font-semibold text-slate-900 mb-3">Transformation Process</h3>
+      <div className="bg-gradient-to-br from-slate-50 to-blue-50/30 border border-slate-200 rounded-lg p-6 hover:shadow-sm transition-shadow duration-200">
+        <h3 className="text-base font-semibold text-slate-900 mb-4">Transformation Process</h3>
         <ul className="space-y-2 text-sm text-slate-700">
           <li className="flex gap-3">
             <span className="text-blue-600 font-bold">•</span>

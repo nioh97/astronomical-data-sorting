@@ -14,7 +14,7 @@ export default function Home() {
     <DataProvider>
       <main className="min-h-screen bg-slate-50 text-slate-900">
         <Header />
-        <div className="container mx-auto px-4 py-12 space-y-16 max-w-7xl">
+        <div className="container mx-auto px-4 py-16 space-y-20 max-w-7xl">
           <OverviewSection />
           <CanonicalSchemaSection />
           <DataIngestionSection />
