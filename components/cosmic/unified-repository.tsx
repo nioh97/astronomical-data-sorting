@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Download, Search } from "lucide-react"
+import { useDataContext } from "@/lib/data-context"
+import { StandardizedData } from "@/lib/standardization"
 
 interface UnifiedData {
   object_id: string
@@ -19,72 +21,24 @@ interface UnifiedData {
 }
 
 export default function UnifiedRepositorySection() {
+  const { unifiedData: contextData } = useDataContext()
   const [selectedAgency, setSelectedAgency] = useState<string>("All")
   const [selectedType, setSelectedType] = useState<string>("All")
   const [searchQuery, setSearchQuery] = useState<string>("")
 
-  const unifiedData: UnifiedData[] = [
-    {
-      object_id: "OBJ-001",
-      object_type: "Star",
-      ra: 245.5,
-      dec: -45.2,
-      distance: 314568000,
-      brightness: 8.3,
-      observation_time: "2024-01-15T10:30:00Z",
-      source: "NASA",
-    },
-    {
-      object_id: "OBJ-002",
-      object_type: "Galaxy",
-      ra: 245.505,
-      dec: -45.201,
-      distance: 314570000,
-      brightness: 8.3,
-      observation_time: "2024-01-16T14:45:00Z",
-      source: "ESA",
-    },
-    {
-      object_id: "OBJ-003",
-      object_type: "Quasar",
-      ra: 120.3,
-      dec: 25.8,
-      distance: 1245890000,
-      brightness: 15.7,
-      observation_time: "2024-01-17T09:20:00Z",
-      source: "NASA",
-    },
-    {
-      object_id: "OBJ-004",
-      object_type: "Star",
-      ra: 180.2,
-      dec: 12.5,
-      distance: 42560000,
-      brightness: 5.2,
-      observation_time: "2024-01-18T16:10:00Z",
-      source: "ESA",
-    },
-    {
-      object_id: "OBJ-005",
-      object_type: "Galaxy",
-      ra: 90.1,
-      dec: -30.5,
-      distance: 567800000,
-      brightness: 12.1,
-      observation_time: "2024-01-19T11:15:00Z",
-      source: "JAXA",
-    },
-    {
-      object_id: "OBJ-006",
-      object_type: "Star",
-      ra: 200.8,
-      dec: 45.3,
-      distance: 89350000,
-      brightness: 6.8,
-      observation_time: "2024-01-20T08:45:00Z",
-      source: "NASA",
-    },
-  ]
+  // Convert StandardizedData to UnifiedData format for display
+  const unifiedData: UnifiedData[] = useMemo(() => {
+    return contextData.map((data) => ({
+      object_id: data.object_id,
+      object_type: data.object_type,
+      ra: data.right_ascension_deg,
+      dec: data.declination_deg,
+      distance: data.distance_km,
+      brightness: data.brightness,
+      observation_time: data.observation_time,
+      source: data.source,
+    }))
+  }, [contextData])
 
   const filteredData = useMemo(() => {
     return unifiedData.filter((row) => {
@@ -128,8 +82,16 @@ export default function UnifiedRepositorySection() {
     document.body.removeChild(link)
   }
 
-  const agencyOptions = ["All", "NASA", "ESA", "JAXA"]
-  const typeOptions = ["All", "Star", "Galaxy", "Quasar"]
+  // Get unique agencies and types from the data
+  const agencyOptions = useMemo(() => {
+    const agencies = new Set(unifiedData.map((d) => d.source))
+    return ["All", ...Array.from(agencies).sort()]
+  }, [unifiedData])
+
+  const typeOptions = useMemo(() => {
+    const types = new Set(unifiedData.map((d) => d.object_type))
+    return ["All", ...Array.from(types).sort()]
+  }, [unifiedData])
 
   return (
     <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">

@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Upload, FileText, CheckCircle2, AlertCircle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { parseFile } from "@/lib/file-parsers"
+import { standardizeData } from "@/lib/standardization"
+import { useDataContext } from "@/lib/data-context"
 
 interface IngestedDataset {
   name: string
@@ -19,29 +22,48 @@ interface IngestedDataset {
 }
 
 export default function DataIngestionSection() {
-  const [ingestedDatasets, setIngestedDatasets] = useState<IngestedDataset[]>([
-    {
-      name: "Dataset A",
-      agency: "NASA Space Telescope",
-      format: "CSV",
-      fields: ["RA", "DEC", "MAG", "DIST", "OBS_DATE"],
-      units: ["degrees", "degrees", "magnitude", "AU", "YYYY-MM-DD"],
-      status: "completed",
-      uploadedAt: new Date(Date.now() - 86400000),
-    },
-    {
-      name: "Dataset B",
-      agency: "ESA Gaia Mission",
-      format: "JSON",
-      fields: ["right_ascension", "declination", "brightness", "parallax", "observation_timestamp"],
-      units: ["radians", "radians", "magnitude", "arcsec", "Unix timestamp"],
-      status: "completed",
-      uploadedAt: new Date(Date.now() - 172800000),
-    },
-  ])
+  const { addStandardizedData } = useDataContext()
+  const [ingestedDatasets, setIngestedDatasets] = useState<IngestedDataset[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+
+  const detectAgency = (fileName: string): string => {
+    const lower = fileName.toLowerCase()
+    if (lower.includes("nasa")) return "NASA"
+    if (lower.includes("esa")) return "ESA"
+    if (lower.includes("jaxa")) return "JAXA"
+    if (lower.includes("gaia")) return "ESA"
+    if (lower.includes("hubble") || lower.includes("jwst")) return "NASA"
+    return "Unknown Agency"
+  }
+
+  const detectUnits = (headers: string[]): string[] => {
+    return headers.map((header) => {
+      const lower = header.toLowerCase()
+      if (lower.includes("ra") || lower.includes("right_ascension")) {
+        return lower.includes("rad") ? "radians" : "degrees"
+      }
+      if (lower.includes("dec") || lower.includes("declination")) {
+        return lower.includes("rad") ? "radians" : "degrees"
+      }
+      if (lower.includes("dist") || lower.includes("distance")) {
+        if (lower.includes("au")) return "AU"
+        if (lower.includes("ly") || lower.includes("light")) return "light years"
+        if (lower.includes("pc") || lower.includes("parsec")) return "parsecs"
+        if (lower.includes("km")) return "km"
+        return "AU"
+      }
+      if (lower.includes("parallax")) return "arcseconds"
+      if (lower.includes("mag") || lower.includes("magnitude") || lower.includes("brightness")) {
+        return "magnitude"
+      }
+      if (lower.includes("time") || lower.includes("date") || lower.includes("timestamp")) {
+        return "ISO 8601"
+      }
+      return "unknown"
+    })
+  }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -51,23 +73,47 @@ export default function DataIngestionSection() {
     setUploadError(null)
     setUploadSuccess(false)
 
-    // Simulate file processing
-    setTimeout(() => {
+    try {
+      // Parse the file
+      const parsedData = await parseFile(file)
+      
+      if (parsedData.rows.length === 0) {
+        throw new Error("File contains no data rows")
+      }
+
+      // Detect agency from filename
+      const agency = detectAgency(file.name)
+      const format = file.name.split(".").pop()?.toUpperCase() || "UNKNOWN"
+
+      // Standardize the data
+      const standardized = standardizeData(parsedData.rows, parsedData.headers, agency)
+
+      // Add to unified repository
+      addStandardizedData(standardized)
+
+      // Create dataset record
+      const units = detectUnits(parsedData.headers)
       const newDataset: IngestedDataset = {
         name: file.name,
-        agency: file.name.includes("nasa") ? "NASA" : file.name.includes("esa") ? "ESA" : "Unknown Agency",
-        format: file.name.split(".").pop()?.toUpperCase() || "UNKNOWN",
-        fields: ["field1", "field2", "field3"],
-        units: ["unit1", "unit2", "unit3"],
+        agency,
+        format,
+        fields: parsedData.headers,
+        units,
         status: "completed",
         uploadedAt: new Date(),
       }
 
       setIngestedDatasets([newDataset, ...ingestedDatasets])
-      setUploading(false)
       setUploadSuccess(true)
       setTimeout(() => setUploadSuccess(false), 3000)
-    }, 2000)
+
+      // Reset file input
+      event.target.value = ""
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Failed to process file")
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
