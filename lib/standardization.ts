@@ -20,6 +20,9 @@ const FIELD_MAPPINGS: Record<string, string> = {
   "ra_degrees": "right_ascension",
   "ra_rad": "right_ascension",
   "ra_radians": "right_ascension",
+  "_raj2000": "right_ascension",
+  "raj2000": "right_ascension",
+  "ra_j2000": "right_ascension",
   // Declination variations
   dec: "declination",
   declination: "declination",
@@ -27,6 +30,9 @@ const FIELD_MAPPINGS: Record<string, string> = {
   "dec_degrees": "declination",
   "dec_rad": "declination",
   "dec_radians": "declination",
+  "_dej2000": "declination",
+  "dej2000": "declination",
+  "dec_j2000": "declination",
   // Distance variations
   dist: "distance",
   distance: "distance",
@@ -35,17 +41,25 @@ const FIELD_MAPPINGS: Record<string, string> = {
   "distance_km": "distance",
   "distance_ly": "distance",
   "distance_parsec": "distance",
+  "_r": "distance",
+  "r": "distance",
   // Brightness/Magnitude variations
   mag: "brightness",
   magnitude: "brightness",
   brightness: "brightness",
   "apparent_magnitude": "brightness",
   "absolute_magnitude": "brightness",
+  "vmag": "brightness",
+  "v_mag": "brightness",
+  "visual_magnitude": "brightness",
   // Object type variations
   type: "object_type",
   "object_type": "object_type",
   "obj_type": "object_type",
   "star_type": "object_type",
+  "sptype": "object_type",
+  "sp_type": "object_type",
+  "spectral_type": "object_type",
   // Observation time variations
   "obs_date": "observation_time",
   "observation_time": "observation_time",
@@ -58,6 +72,10 @@ const FIELD_MAPPINGS: Record<string, string> = {
   "object_id": "object_id",
   "obj_id": "object_id",
   "star_id": "object_id",
+  "name": "object_id",
+  "hd": "object_id",
+  "hr": "object_id",
+  "varid": "object_id",
 }
 
 // Unit conversion functions
@@ -211,15 +229,29 @@ export function standardizeData(
       }
     }
 
-    // Object Type
-    standardized.object_type = mappedFields.object_type || row[headers.find((h) => 
-      h.toLowerCase().includes("type") || h.toLowerCase().includes("class")
-    ) || ""] || "Unknown"
+    // Object Type - check SpType, spectral type, etc.
+    standardized.object_type = mappedFields.object_type || 
+      row[headers.find((h) => 
+        h.toLowerCase().includes("sptype") || 
+        h.toLowerCase().includes("sp_type") ||
+        h.toLowerCase().includes("spectral_type") ||
+        h.toLowerCase().includes("type") || 
+        h.toLowerCase().includes("class")
+      ) || ""] || "Unknown"
 
-    // Object ID
+    // Object ID - prioritize Name, HD, HR, VarID, then generic ID fields
     standardized.object_id = mappedFields.object_id || 
+      row[headers.find((h) => h.toLowerCase() === "name") || ""] ||
+      row[headers.find((h) => h.toLowerCase() === "hd") || ""] ||
+      row[headers.find((h) => h.toLowerCase() === "hr") || ""] ||
+      row[headers.find((h) => h.toLowerCase() === "varid") || ""] ||
       row[headers.find((h) => h.toLowerCase().includes("id")) || ""] || 
       `OBJ-${String(index + 1).padStart(3, "0")}`
+    
+    // Convert object_id to string if it's a number
+    if (typeof standardized.object_id === 'number') {
+      standardized.object_id = String(standardized.object_id)
+    }
 
     // Observation Time
     standardized.observation_time = mappedFields.observation_time 
