@@ -30,28 +30,18 @@ export default function VisualizationSection() {
   ]
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm hover:shadow-md transition-all duration-500 relative overflow-hidden group hover:scale-[1.01]">
-      <div className="absolute inset-0 border border-transparent group-hover:border-slate-300/50 rounded-lg transition-all duration-300"></div>
-      <div className="relative">
-        <h2 className="text-2xl font-semibold text-slate-900 flex items-center gap-3 mb-6">
-          <span className="w-2 h-2 bg-slate-400 rounded-full animate-soft-pulse"></span>
-          Data Visualization & Analysis
-        </h2>
+    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
+      <h2 className="text-2xl font-semibold text-slate-900">Data Visualization & Analysis</h2>
 
-      <div className="text-sm text-slate-700 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 hover:bg-blue-100/50 transition-colors duration-300">
+      <div className="text-sm text-slate-700 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
         These visualizations demonstrate the power of unified data fusion: cross-agency comparison is now possible
         because all data is standardized and harmonized.
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Scatter Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-300 group/chart">
-          <div className="absolute inset-0 border border-transparent group-hover/chart:border-slate-300/50 rounded-lg transition-all duration-300"></div>
-          <div className="relative">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-soft-pulse"></span>
-              Distance vs Brightness
-            </h3>
+        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Distance vs Brightness</h3>
           <ResponsiveContainer width="100%" height={300}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.3)" />
@@ -78,17 +68,11 @@ export default function VisualizationSection() {
               <Scatter name="Objects" data={distanceBrightnessData} fill="#3b82f6" />
             </ScatterChart>
           </ResponsiveContainer>
-          </div>
         </div>
 
         {/* Bar Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-300 group/chart">
-          <div className="absolute inset-0 border border-transparent group-hover/chart:border-slate-300/50 rounded-lg transition-all duration-300"></div>
-          <div className="relative">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-soft-pulse stagger-1"></span>
-              Objects per Source Agency
-            </h3>
+        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Objects per Source Agency</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={agencyCountData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.3)" />
@@ -106,9 +90,7 @@ export default function VisualizationSection() {
               <Bar dataKey="count" fill="#3b82f6" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-          </div>
         </div>
-      </div>
       </div>
     </section>
   )

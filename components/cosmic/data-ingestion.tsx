@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,11 +9,16 @@ import { Upload, FileText, CheckCircle2, AlertCircle, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
 import { parseFile } from "@/lib/file-parsers"
-import { standardizeData } from "@/lib/standardization"
+import { standardizeData, CustomFieldMapping } from "@/lib/standardization"
 import { useDataContext } from "@/lib/data-context"
+<<<<<<< HEAD
 import SchemaTable from "@/components/cosmic/SchemaTable"
 
 
+=======
+import { inferFieldMappings, FieldInference } from "@/lib/ai-inference"
+import { FieldInferenceDialog } from "./field-inference-dialog"
+>>>>>>> c6341cd4bf61f30afcf35323ae28c6e3a8b83af9
 
 interface IngestedDataset {
   name: string
@@ -33,10 +38,16 @@ export default function DataIngestionSection() {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+<<<<<<< HEAD
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [showSchema, setShowSchema] = useState(false)
 
 
+=======
+  const [inferenceDialogOpen, setInferenceDialogOpen] = useState(false)
+  const [pendingParsedData, setPendingParsedData] = useState<{ parsedData: any; agency: string; fileName: string } | null>(null)
+  const [inferenceResult, setInferenceResult] = useState<{ fields: FieldInference[]; needsValidation: boolean } | null>(null)
+>>>>>>> c6341cd4bf61f30afcf35323ae28c6e3a8b83af9
 
   const detectAgency = (fileName: string): string => {
     const lower = fileName.toLowerCase()
@@ -101,14 +112,37 @@ export default function DataIngestionSection() {
       const agency = detectAgency(file.name)
       const format = file.name.split(".").pop()?.toUpperCase() || "UNKNOWN"
 
-      // Standardize the data
-      const standardized = standardizeData(parsedData.rows, parsedData.headers, agency)
+      // Extract field schemas from metadata if available (for XML files)
+      const fieldSchemas = parsedData.metadata?.fieldSchemas?.map((fs: any) => ({
+        name: fs.name,
+        unit: fs.unit,
+        datatype: fs.datatype,
+        ucd: fs.ucd,
+        xtype: fs.xtype,
+      }))
 
+      // Step 1: Try rule-based standardization first
+      const standardized = standardizeData(parsedData.rows, parsedData.headers, agency)
+      
+      // Step 2: Check if AI inference is needed
+      const inference = await inferFieldMappings(parsedData, fieldSchemas)
+      
+      // Step 3: If LLM was used, show dialog for validation
+      if (inference.needsValidation) {
+        setPendingParsedData({ parsedData, agency, fileName: file.name })
+        setInferenceResult({ fields: inference.fields, needsValidation: inference.needsValidation })
+        setInferenceDialogOpen(true)
+        setUploading(false)
+        event.target.value = ""
+        return
+      }
+
+      // If no validation needed, proceed directly
       // Add to unified repository
       addStandardizedData(standardized)
 
       // Create dataset record
-      const units = detectUnits(parsedData.headers)
+      const units = inference.fields.map((f) => f.suggestedUnit)
       const newDataset: IngestedDataset = {
         name: file.name,
         agency,
@@ -132,6 +166,84 @@ export default function DataIngestionSection() {
     } finally {
       setUploading(false)
     }
+  }
+
+  const handleInferenceConfirm = (inferences: FieldInference[]) => {
+    if (!pendingParsedData) return
+
+    // Convert inferences to custom mappings
+    const customMappings: CustomFieldMapping[] = inferences.map((inf) => ({
+      originalField: inf.fieldName,
+      canonicalField: inf.suggestedCanonicalField,
+      unit: inf.suggestedUnit,
+    }))
+
+    // Standardize with custom mappings
+    const standardized = standardizeData(
+      pendingParsedData.parsedData.rows,
+      pendingParsedData.parsedData.headers,
+      pendingParsedData.agency,
+      customMappings
+    )
+
+    // Add to unified repository
+    addStandardizedData(standardized)
+
+    // Create dataset record
+    const units = inferences.map((f) => f.suggestedUnit)
+    const newDataset: IngestedDataset = {
+      name: pendingParsedData.fileName,
+      agency: pendingParsedData.agency,
+      format: pendingParsedData.fileName.split(".").pop()?.toUpperCase() || "UNKNOWN",
+      fields: pendingParsedData.parsedData.headers,
+      units,
+      status: "completed",
+      uploadedAt: new Date(),
+    }
+
+    setIngestedDatasets([newDataset, ...ingestedDatasets])
+    setUploadSuccess(true)
+    setTimeout(() => setUploadSuccess(false), 3000)
+
+    // Reset state
+    setPendingParsedData(null)
+    setInferenceResult(null)
+    setInferenceDialogOpen(false)
+  }
+
+  const handleInferenceReject = () => {
+    if (!pendingParsedData) return
+
+    // Standardize without custom mappings (use rule-based only)
+    const standardized = standardizeData(
+      pendingParsedData.parsedData.rows,
+      pendingParsedData.parsedData.headers,
+      pendingParsedData.agency
+    )
+
+    // Add to unified repository
+    addStandardizedData(standardized)
+
+    // Create dataset record
+    const units = detectUnits(pendingParsedData.parsedData.headers)
+    const newDataset: IngestedDataset = {
+      name: pendingParsedData.fileName,
+      agency: pendingParsedData.agency,
+      format: pendingParsedData.fileName.split(".").pop()?.toUpperCase() || "UNKNOWN",
+      fields: pendingParsedData.parsedData.headers,
+      units,
+      status: "completed",
+      uploadedAt: new Date(),
+    }
+
+    setIngestedDatasets([newDataset, ...ingestedDatasets])
+    setUploadSuccess(true)
+    setTimeout(() => setUploadSuccess(false), 3000)
+
+    // Reset state
+    setPendingParsedData(null)
+    setInferenceResult(null)
+    setInferenceDialogOpen(false)
   }
 
   return (
@@ -304,6 +416,7 @@ export default function DataIngestionSection() {
         ))}
       </div>
       </div>
+<<<<<<< HEAD
       <div className="relative z-10 flex justify-end pt-6 border-t border-slate-200">
             <Button
               className="px-6 py-2"
@@ -333,6 +446,19 @@ export default function DataIngestionSection() {
           </div>
         </DialogContent>
       </Dialog>
+=======
+
+      {/* AI Inference Dialog */}
+      {inferenceResult && (
+        <FieldInferenceDialog
+          open={inferenceDialogOpen}
+          onOpenChange={setInferenceDialogOpen}
+          inferences={inferenceResult.fields}
+          onConfirm={handleInferenceConfirm}
+          onReject={handleInferenceReject}
+        />
+      )}
+>>>>>>> c6341cd4bf61f30afcf35323ae28c6e3a8b83af9
     </section>
   )
 }

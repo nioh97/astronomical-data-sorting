@@ -93,26 +93,45 @@ export async function parseXML(file: File): Promise<ParsedData> {
 
           // Check for SkyScribe_Clean_Data format (or similar VOTable-like structure)
           if (root.Metadata && root.TABLEDATA) {
-            // Extract field names from Metadata
+            // Extract field definitions from Metadata - preserve original order
             const fields = Array.isArray(root.Metadata.FIELD) 
               ? root.Metadata.FIELD 
               : root.Metadata.FIELD 
                 ? [root.Metadata.FIELD] 
                 : []
             
-            headers = fields.map((field: any) => {
-              // Use the 'name' attribute from FIELD element
-              // xml2js might put attributes in $ or directly on the object
-              if (field.$ && field.$.name) {
-                return field.$.name
+            // Build field schemas with full metadata
+            const fieldSchemas: Array<{
+              name: string
+              unit: string
+              datatype: string
+              index: number
+              ucd?: string
+              xtype?: string
+            }> = []
+            
+            headers = fields.map((field: any, index: number) => {
+              // Extract attributes - xml2js puts attributes in $ or directly on the object
+              const attrs = field.$ || {}
+              const name = attrs.name || field.name || ""
+              const unit = attrs.unit || field.unit || "unknown"
+              const datatype = attrs.datatype || field.datatype || "string"
+              const ucd = attrs.ucd || field.ucd
+              const xtype = attrs.xtype || field.xtype
+              
+              // Store full field schema
+              if (name) {
+                fieldSchemas.push({
+                  name,
+                  unit: unit || "unknown",
+                  datatype: datatype || "string",
+                  index,
+                  ...(ucd && { ucd }),
+                  ...(xtype && { xtype }),
+                })
               }
-              if (field.name) {
-                return field.name
-              }
-              if (typeof field === 'string') {
-                return field
-              }
-              return ""
+              
+              return name
             }).filter((h: string) => h !== "")
 
             // Extract data rows from TABLEDATA
@@ -135,10 +154,11 @@ export async function parseXML(file: File): Promise<ParsedData> {
                 cells = tr
               }
               
-              // Map each cell to its corresponding header
+              // Map each cell to its corresponding field by index (preserving FIELD order)
               cells.forEach((cell: any, index: number) => {
-                if (index < headers.length) {
-                  const header = headers[index]
+                if (index < fieldSchemas.length) {
+                  const fieldSchema = fieldSchemas[index]
+                  const header = fieldSchema.name
                   let value: any = null
                   
                   // Extract text content from cell (handle various formats)
@@ -164,17 +184,22 @@ export async function parseXML(file: File): Promise<ParsedData> {
                   if (value === '' || value === null || value === undefined) {
                     row[header] = null
                   } else {
-                    // Try to convert to number if it looks like a number (but not if it's a string like "Var?")
+                    // Try to convert to number based on datatype
                     const trimmedValue = typeof value === 'string' ? value.trim() : String(value)
-                    if (trimmedValue !== '' && !isNaN(Number(trimmedValue)) && trimmedValue !== '') {
-                      const numValue = Number(trimmedValue)
-                      // Only convert if it's a valid number and not NaN
-                      if (!isNaN(numValue)) {
-                        row[header] = numValue
+                    if (fieldSchema.datatype === 'double' || fieldSchema.datatype === 'float' || fieldSchema.datatype === 'int') {
+                      // Numeric datatype - try to convert
+                      if (trimmedValue !== '' && !isNaN(Number(trimmedValue))) {
+                        const numValue = Number(trimmedValue)
+                        if (!isNaN(numValue)) {
+                          row[header] = numValue
+                        } else {
+                          row[header] = value
+                        }
                       } else {
                         row[header] = value
                       }
                     } else {
+                      // String or other datatype - keep as string
                       row[header] = value
                     }
                   }
@@ -190,7 +215,8 @@ export async function parseXML(file: File): Promise<ParsedData> {
                 totalRows: rows.length, 
                 rootKey,
                 format: "SkyScribe",
-                fieldCount: headers.length
+                fieldCount: headers.length,
+                fieldSchemas: fieldSchemas
               } 
             })
             return

@@ -94,13 +94,8 @@ export default function UnifiedRepositorySection() {
   }, [unifiedData])
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm hover:shadow-md transition-all duration-500 relative overflow-hidden group hover:scale-[1.01]">
-      <div className="absolute inset-0 border border-transparent group-hover:border-slate-300/50 rounded-lg transition-all duration-300"></div>
-      <div className="relative">
-        <h2 className="text-2xl font-semibold text-slate-900 flex items-center gap-3 mb-6">
-          <span className="w-2 h-2 bg-slate-400 rounded-full animate-soft-pulse"></span>
-          Unified Astronomical Dataset Repository
-        </h2>
+    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
+      <h2 className="text-2xl font-semibold text-slate-900">Unified Astronomical Dataset Repository</h2>
 
       <Card className="p-6 border-slate-200">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -137,7 +132,7 @@ export default function UnifiedRepositorySection() {
           <div>
             <label className="text-sm text-slate-700 font-medium block mb-2">Search</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400 animate-float-gentle" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
                 type="text"
                 placeholder="Search objects..."
@@ -175,11 +170,8 @@ export default function UnifiedRepositorySection() {
                 </tr>
               ) : (
                 filteredData.map((row, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-all duration-200 hover:translate-x-1 group/row">
-                    <td className="py-3 px-4 font-mono text-slate-800 group-hover/row:text-slate-900 transition-colors">
-                      <span className="inline-block w-1.5 h-1.5 bg-slate-300 rounded-full mr-2 opacity-0 group-hover/row:opacity-100 transition-opacity"></span>
-                      {row.object_id}
-                    </td>
+                  <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition">
+                    <td className="py-3 px-4 font-mono text-slate-800">{row.object_id}</td>
                     <td className="py-3 px-4 text-slate-700">{row.object_type}</td>
                     <td className="py-3 px-4 text-slate-600">{row.ra.toFixed(2)}</td>
                     <td className="py-3 px-4 text-slate-600">{row.dec.toFixed(2)}</td>
@@ -206,13 +198,12 @@ export default function UnifiedRepositorySection() {
         </div>
 
         <div className="flex justify-end mt-6">
-          <Button onClick={handleExport} className="gap-2 hover:scale-[1.02] transition-transform duration-200">
-            <Download className="w-4 h-4 animate-float-gentle" />
+          <Button onClick={handleExport} className="gap-2">
+            <Download className="w-4 h-4" />
             Export Dataset (CSV)
           </Button>
         </div>
       </Card>
-      </div>
     </section>
   )
 }
