@@ -11,7 +11,7 @@ export interface StandardizedData {
 }
 
 // Field name mappings - maps common variations to canonical field names
-const FIELD_MAPPINGS: Record<string, string> = {
+export const FIELD_MAPPINGS: Record<string, string> = {
   // Right Ascension variations
   ra: "right_ascension",
   right_ascension: "right_ascension",
@@ -165,13 +165,31 @@ function detectUnit(fieldName: string, value: any, headers: string[]): string {
   return ""
 }
 
+export interface CustomFieldMapping {
+  originalField: string
+  canonicalField: string | null
+  unit: string
+}
+
 export function standardizeData(
   rawData: Record<string, any>[],
   headers: string[],
-  source: string
+  source: string,
+  customMappings?: CustomFieldMapping[]
 ): StandardizedData[] {
   if (rawData.length === 0) {
     return []
+  }
+
+  // Build mapping dictionary from custom mappings
+  const customFieldMap: Record<string, { canonicalField: string | null; unit: string }> = {}
+  if (customMappings) {
+    customMappings.forEach((mapping) => {
+      customFieldMap[mapping.originalField] = {
+        canonicalField: mapping.canonicalField,
+        unit: mapping.unit,
+      }
+    })
   }
 
   return rawData.map((row, index) => {
@@ -180,16 +198,31 @@ export function standardizeData(
       original_data: row,
     }
 
-    // Map fields
+    // Map fields - prioritize custom mappings, then fall back to rule-based
     const mappedFields: Record<string, any> = {}
+    const fieldUnits: Record<string, string> = {}
+    
     headers.forEach((header) => {
       const normalizedHeader = header.toLowerCase().trim()
-      const canonicalField = FIELD_MAPPINGS[normalizedHeader]
-      if (canonicalField) {
-        mappedFields[canonicalField] = row[header]
+      
+      // Check custom mappings first
+      if (customFieldMap[header] || customFieldMap[normalizedHeader]) {
+        const mapping = customFieldMap[header] || customFieldMap[normalizedHeader]
+        if (mapping.canonicalField) {
+          mappedFields[mapping.canonicalField] = row[header]
+          fieldUnits[mapping.canonicalField] = mapping.unit
+        } else {
+          mappedFields[normalizedHeader] = row[header]
+        }
       } else {
-        // Keep original field name
-        mappedFields[normalizedHeader] = row[header]
+        // Fall back to rule-based mapping
+        const canonicalField = FIELD_MAPPINGS[normalizedHeader]
+        if (canonicalField) {
+          mappedFields[canonicalField] = row[header]
+        } else {
+          // Keep original field name
+          mappedFields[normalizedHeader] = row[header]
+        }
       }
     })
 
@@ -198,7 +231,7 @@ export function standardizeData(
     if (mappedFields.right_ascension !== undefined) {
       const value = parseFloat(mappedFields.right_ascension)
       if (!isNaN(value)) {
-        const unit = detectUnit("right_ascension", value, headers)
+        const unit = fieldUnits.right_ascension || detectUnit("right_ascension", value, headers)
         standardized.right_ascension_deg = convertToDegrees(value, unit)
       }
     }
@@ -207,7 +240,7 @@ export function standardizeData(
     if (mappedFields.declination !== undefined) {
       const value = parseFloat(mappedFields.declination)
       if (!isNaN(value)) {
-        const unit = detectUnit("declination", value, headers)
+        const unit = fieldUnits.declination || detectUnit("declination", value, headers)
         standardized.declination_deg = convertToDegrees(value, unit)
       }
     }
@@ -216,7 +249,7 @@ export function standardizeData(
     if (mappedFields.distance !== undefined) {
       const value = parseFloat(mappedFields.distance)
       if (!isNaN(value)) {
-        const unit = detectUnit("distance", value, headers)
+        const unit = fieldUnits.distance || detectUnit("distance", value, headers)
         standardized.distance_km = convertToKilometers(value, unit)
       }
     }

@@ -7,38 +7,21 @@ import UnifiedRepositorySection from "@/components/cosmic/unified-repository"
 import VisualizationSection from "@/components/cosmic/visualization"
 import InsightsSection from "@/components/cosmic/insights"
 import Footer from "@/components/cosmic/footer"
-import Starfield from "@/components/cosmic/starfield"
-import SectionReveal from "@/components/cosmic/section-reveal"
 import { DataProvider } from "@/lib/data-context"
 
 export default function Home() {
   return (
     <DataProvider>
-      <main className="min-h-screen bg-slate-50 text-slate-900 relative overflow-hidden">
-        <Starfield />
+      <main className="min-h-screen bg-slate-50 text-slate-900">
         <Header />
-        <div className="container mx-auto px-4 py-12 space-y-16 max-w-7xl relative z-10">
-          <SectionReveal>
-            <OverviewSection />
-          </SectionReveal>
-          <SectionReveal delay={100}>
-            <CanonicalSchemaSection />
-          </SectionReveal>
-          <SectionReveal delay={200}>
-            <DataIngestionSection />
-          </SectionReveal>
-          <SectionReveal delay={300}>
-            <StandardizationSection />
-          </SectionReveal>
-          <SectionReveal delay={400}>
-            <UnifiedRepositorySection />
-          </SectionReveal>
-          <SectionReveal delay={500}>
-            <VisualizationSection />
-          </SectionReveal>
-          <SectionReveal delay={600}>
-            <InsightsSection />
-          </SectionReveal>
+        <div className="container mx-auto px-4 py-12 space-y-16 max-w-7xl">
+          <OverviewSection />
+          <CanonicalSchemaSection />
+          <DataIngestionSection />
+          <StandardizationSection />
+          <UnifiedRepositorySection />
+          <VisualizationSection />
+          <InsightsSection />
         </div>
         <Footer />
       </main>
