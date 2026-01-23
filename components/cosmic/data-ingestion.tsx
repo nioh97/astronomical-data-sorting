@@ -5,11 +5,15 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Upload, FileText, CheckCircle2, AlertCircle } from "lucide-react"
+import { Upload, FileText, CheckCircle2, AlertCircle, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
 import { parseFile } from "@/lib/file-parsers"
 import { standardizeData } from "@/lib/standardization"
 import { useDataContext } from "@/lib/data-context"
+import SchemaTable from "@/components/cosmic/SchemaTable"
+
+
 
 interface IngestedDataset {
   name: string
@@ -19,7 +23,9 @@ interface IngestedDataset {
   units: string[]
   status: "pending" | "processing" | "completed" | "error"
   uploadedAt?: Date
+  previewRows?: Record<string, any>[]
 }
+
 
 export default function DataIngestionSection() {
   const { addStandardizedData } = useDataContext()
@@ -27,6 +33,10 @@ export default function DataIngestionSection() {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [showSchema, setShowSchema] = useState(false)
+
+
 
   const detectAgency = (fileName: string): string => {
     const lower = fileName.toLowerCase()
@@ -39,6 +49,10 @@ export default function DataIngestionSection() {
     if (lower.includes("vizier")) return "VizieR"
     return "Unknown Agency"
   }
+  const handleDeleteDataset = (index: number) => {
+  setIngestedDatasets((prev) => prev.filter((_, i) => i !== index))
+}
+
 
   const detectUnits = (headers: string[]): string[] => {
     return headers.map((header) => {
@@ -103,7 +117,9 @@ export default function DataIngestionSection() {
         units,
         status: "completed",
         uploadedAt: new Date(),
+        previewRows: parsedData.rows.slice(0, 5),
       }
+
 
       setIngestedDatasets([newDataset, ...ingestedDatasets])
       setUploadSuccess(true)
@@ -136,14 +152,26 @@ export default function DataIngestionSection() {
             </Label>
           </div>
           <p className="text-sm text-slate-600">Supported formats: CSV, JSON, FITS, XML</p>
-          <Input
-            id="file-upload"
-            type="file"
-            accept=".csv,.json,.fits,.xml"
-            onChange={handleFileUpload}
-            disabled={uploading}
-            className="cursor-pointer"
-          />
+         <Input
+  id="file-upload"
+  type="file"
+  accept=".csv,.json,.fits,.xml"
+  onChange={handleFileUpload}
+  disabled={uploading}
+  className="hidden"
+/>
+
+<Label
+  htmlFor="file-upload"
+  className="inline-flex items-center gap-2 px-5 py-3 rounded-lg border-2 border-slate-300 
+             bg-white text-slate-700 font-medium cursor-pointer
+             hover:bg-slate-100 hover:border-slate-400
+             transition-all duration-300 w-fit"
+>
+  <FileText className="w-5 h-5 text-slate-600" />
+  Choose File
+</Label>
+
           {uploading && (
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
@@ -174,11 +202,23 @@ export default function DataIngestionSection() {
             <div className="relative">
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
-                {ds.status === "completed" && (
-                  <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
-                )}
-              </div>
+  <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
+
+  <div className="flex items-center gap-2">
+    {ds.status === "completed" && (
+      <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
+    )}
+
+    <button
+      onClick={() => handleDeleteDataset(idx)}
+      className="text-slate-400 hover:text-red-600 transition-colors"
+      title="Remove dataset"
+    >
+      <X className="w-4 h-4" />
+    </button>
+  </div>
+</div>
+
               <p className="text-sm text-slate-600">{ds.agency}</p>
               {ds.uploadedAt && (
                 <p className="text-xs text-slate-500 mt-1">
@@ -224,17 +264,75 @@ export default function DataIngestionSection() {
             </div>
 
             <Button
-              variant="outline"
-              className="w-full hover:scale-[1.02] transition-transform duration-200"
-              disabled={ds.status !== "completed"}
-            >
-              {ds.status === "completed" ? "View Details" : "Processing..."}
-            </Button>
+            variant="outline"
+            className="w-full hover:scale-[1.02] transition-transform duration-200"
+            disabled={ds.status !== "completed"}
+            onClick={() => setPreviewIndex(previewIndex === idx ? null : idx)}
+          >
+            {previewIndex === idx ? "Hide Preview" : "View Details"}
+          </Button>
+          {previewIndex === idx && ds.previewRows && (
+  <div className="mt-4 overflow-x-auto border rounded-md bg-slate-50">
+    <table className="w-full text-xs font-mono">
+      <thead className="bg-slate-200">
+        <tr>
+          {ds.fields.map((field, i) => (
+            <th key={i} className="px-2 py-1 text-left border">
+              {field}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {ds.previewRows.map((row, rIdx) => (
+          <tr key={rIdx} className="border-t">
+            {ds.fields.map((field, cIdx) => (
+              <td key={cIdx} className="px-2 py-1 border">
+                {String(row[field] ?? "—")}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+
+
             </div>
           </Card>
         ))}
       </div>
       </div>
+      <div className="relative z-10 flex justify-end pt-6 border-t border-slate-200">
+            <Button
+              className="px-6 py-2"
+              disabled={ingestedDatasets.length === 0}
+              onClick={() => setShowSchema(true)}
+            >
+              Next
+            </Button>
+
+      </div>
+
+      <Dialog open={showSchema} onOpenChange={setShowSchema}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Schema Configuration</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {ingestedDatasets.map((ds, idx) => (
+              <SchemaTable key={idx} fileName={ds.name} fields={ds.fields} />
+            ))}
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button>Apply Schema</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
