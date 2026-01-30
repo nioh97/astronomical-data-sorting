@@ -34,6 +34,7 @@ export default function DataIngestionSection() {
   const [processingStep, setProcessingStep] = useState<string>("")
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [inferenceDialogOpen, setInferenceDialogOpen] = useState(false)
   const [pendingParsedData, setPendingParsedData] = useState<{ parsedData: any; agency: string; fileName: string } | null>(null)
   const [inferenceResult, setInferenceResult] = useState<{ fields: FieldInference[]; needsValidation: boolean } | null>(null)
