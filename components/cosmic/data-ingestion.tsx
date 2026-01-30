@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Upload, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
+import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
 import { parseFile } from "@/lib/file-parsers"
 import { standardizeData, CustomFieldMapping } from "@/lib/standardization"
 import { useDataContext } from "@/lib/data-context"
@@ -21,7 +22,9 @@ interface IngestedDataset {
   units: string[]
   status: "pending" | "processing" | "completed" | "error"
   uploadedAt?: Date
+  previewRows?: Record<string, any>[]
 }
+
 
 export default function DataIngestionSection() {
   const { addStandardizedData } = useDataContext()
@@ -46,6 +49,10 @@ export default function DataIngestionSection() {
     if (lower.includes("vizier")) return "VizieR"
     return "Unknown Agency"
   }
+  const handleDeleteDataset = (index: number) => {
+  setIngestedDatasets((prev) => prev.filter((_, i) => i !== index))
+}
+
 
   const detectUnits = (headers: string[]): string[] => {
     return headers.map((header) => {
@@ -161,7 +168,9 @@ export default function DataIngestionSection() {
         units,
         status: "completed",
         uploadedAt: new Date(),
+        previewRows: parsedData.rows.slice(0, 5),
       }
+
 
       setIngestedDatasets([newDataset, ...ingestedDatasets])
       setUploadSuccess(true)
@@ -370,11 +379,23 @@ export default function DataIngestionSection() {
             <div className="relative">
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
-                {ds.status === "completed" && (
-                  <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
-                )}
-              </div>
+  <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
+
+  <div className="flex items-center gap-2">
+    {ds.status === "completed" && (
+      <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
+    )}
+
+    <button
+      onClick={() => handleDeleteDataset(idx)}
+      className="text-slate-400 hover:text-red-600 transition-colors"
+      title="Remove dataset"
+    >
+      <X className="w-4 h-4" />
+    </button>
+  </div>
+</div>
+
               <p className="text-sm text-slate-600">{ds.agency}</p>
               {ds.uploadedAt && (
                 <p className="text-xs text-slate-500 mt-1">
@@ -420,12 +441,41 @@ export default function DataIngestionSection() {
             </div>
 
             <Button
-              variant="outline"
-              className="w-full hover:scale-[1.02] transition-transform duration-200"
-              disabled={ds.status !== "completed"}
-            >
-              {ds.status === "completed" ? "View Details" : "Processing..."}
-            </Button>
+            variant="outline"
+            className="w-full hover:scale-[1.02] transition-transform duration-200"
+            disabled={ds.status !== "completed"}
+            onClick={() => setPreviewIndex(previewIndex === idx ? null : idx)}
+          >
+            {previewIndex === idx ? "Hide Preview" : "View Details"}
+          </Button>
+          {previewIndex === idx && ds.previewRows && (
+  <div className="mt-4 overflow-x-auto border rounded-md bg-slate-50">
+    <table className="w-full text-xs font-mono">
+      <thead className="bg-slate-200">
+        <tr>
+          {ds.fields.map((field, i) => (
+            <th key={i} className="px-2 py-1 text-left border">
+              {field}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {ds.previewRows.map((row, rIdx) => (
+          <tr key={rIdx} className="border-t">
+            {ds.fields.map((field, cIdx) => (
+              <td key={cIdx} className="px-2 py-1 border">
+                {String(row[field] ?? "—")}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+
+
             </div>
           </Card>
         ))}
