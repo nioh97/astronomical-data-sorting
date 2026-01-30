@@ -377,14 +377,16 @@ export function standardizeData(
     { name: "source", unit: "none" },
   ]
 
-  // Filter to only include fields that have non-zero/non-empty values in at least one row
+  // Filter to only include fields that have valid (non-null/non-undefined) values in at least one row
+  // Note: Zero is a valid astronomical measurement (e.g., magnitude 0 for Vega, coordinates at 0°)
   const activeFields = allFields.filter((field) => {
     return standardizedRows.some((row) => {
       const value = (row as any)[field.name]
       if (value === null || value === undefined) return false
       if (typeof value === "number") {
-        // For numeric fields, include if non-zero
-        return value !== 0
+        // For numeric fields, include if value exists (0 is valid in astronomy)
+        // Check for NaN to exclude invalid numbers
+        return !isNaN(value)
       }
       if (typeof value === "string") {
         // For string fields, include if non-empty and not "Unknown"

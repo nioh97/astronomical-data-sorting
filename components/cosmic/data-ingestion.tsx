@@ -1,85 +1,113 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
 import { parseFile } from "@/lib/file-parsers"
-import { standardizeData, CustomFieldMapping } from "@/lib/standardization"
-import { useDataContext } from "@/lib/data-context"
-import { inferFieldMappings, FieldInference } from "@/lib/ai-inference"
-import { FieldInferenceDialog } from "./field-inference-dialog"
+import { useDataContext, Dataset } from "@/lib/data-context"
+import { analyzeFieldsWithLLM, FieldAnalysisResult } from "@/lib/field-analysis"
+import { convertDatasetWithLLM } from "@/lib/llm-conversion"
+import { UnitSelectionDialog } from "./unit-selection-dialog"
 
 interface IngestedDataset {
   name: string
-  agency: string
-  format: string
-  fields: string[]
-  units: string[]
   status: "pending" | "processing" | "completed" | "error"
   uploadedAt?: Date
-  previewRows?: Record<string, any>[]
 }
 
-
 export default function DataIngestionSection() {
-  const { addStandardizedData } = useDataContext()
+  const { addDataset } = useDataContext()
   const [ingestedDatasets, setIngestedDatasets] = useState<IngestedDataset[]>([])
   const [uploading, setUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState<string>("")
+  const [processingProgress, setProcessingProgress] = useState<number>(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
-  const [inferenceDialogOpen, setInferenceDialogOpen] = useState(false)
-  const [pendingParsedData, setPendingParsedData] = useState<{ parsedData: any; agency: string; fileName: string } | null>(null)
-  const [inferenceResult, setInferenceResult] = useState<{ fields: FieldInference[]; needsValidation: boolean } | null>(null)
+  const [unitDialogOpen, setUnitDialogOpen] = useState(false)
+  const [pendingAnalysis, setPendingAnalysis] = useState<{
+    fieldAnalysis: FieldAnalysisResult[]
+    parsedData: { headers: string[]; rows: Record<string, any>[]; metadata?: Record<string, any> }
+    filename: string
+    fileType: "csv" | "json" | "xml"
+  } | null>(null)
 
-  const detectAgency = (fileName: string): string => {
-    const lower = fileName.toLowerCase()
-    if (lower.includes("nasa")) return "NASA"
-    if (lower.includes("esa")) return "ESA"
-    if (lower.includes("jaxa")) return "JAXA"
-    if (lower.includes("gaia")) return "ESA"
-    if (lower.includes("hubble") || lower.includes("jwst")) return "NASA"
-    if (lower.includes("skyscribe")) return "SkyScribe"
-    if (lower.includes("vizier")) return "VizieR"
-    return "Unknown Agency"
-  }
   const handleDeleteDataset = (index: number) => {
-  setIngestedDatasets((prev) => prev.filter((_, i) => i !== index))
-}
+    setIngestedDatasets((prev) => prev.filter((_, i) => i !== index))
+  }
 
+  const handleUnitSelectionConfirm = async (selectedUnits: Record<string, string | null>) => {
+    if (!pendingAnalysis) return
 
-  const detectUnits = (headers: string[]): string[] => {
-    return headers.map((header) => {
-      const lower = header.toLowerCase()
-      if (lower.includes("ra") || lower.includes("right_ascension")) {
-        return lower.includes("rad") ? "radians" : "degrees"
+    setIsProcessing(true)
+    setProcessingStep("Converting dataset with AI…")
+    setProcessingProgress(60)
+
+    try {
+      const { fieldAnalysis, parsedData, filename, fileType } = pendingAnalysis
+
+      // STAGE 2: Convert dataset using qwen-2.5-3b
+      setProcessingStep("Converting units and values…")
+      setProcessingProgress(70)
+      const conversionResult = await convertDatasetWithLLM({
+        filename,
+        fileType,
+        headers: parsedData.headers,
+        rows: parsedData.rows, // Full dataset
+        fieldAnalysis,
+        selectedUnits,
+      })
+
+      // STAGE 3: Create Dataset Object
+      setProcessingStep("Storing dataset…")
+      setProcessingProgress(80)
+      const dataset: Dataset = {
+        id: `dataset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: conversionResult.datasetName,
+        columns: conversionResult.columns,
+        rows: conversionResult.rows,
+        sourceFile: filename,
+        createdAt: new Date().toISOString(),
       }
-      if (lower.includes("dec") || lower.includes("declination")) {
-        return lower.includes("rad") ? "radians" : "degrees"
+
+      // STAGE 4: Add to repository
+      setProcessingProgress(90)
+      addDataset(dataset)
+
+      // Create ingestion record
+      const newDataset: IngestedDataset = {
+        name: filename,
+        status: "completed",
+        uploadedAt: new Date(),
       }
-      if (lower.includes("dist") || lower.includes("distance")) {
-        if (lower.includes("au")) return "AU"
-        if (lower.includes("ly") || lower.includes("light")) return "light years"
-        if (lower.includes("pc") || lower.includes("parsec")) return "parsecs"
-        if (lower.includes("km")) return "km"
-        return "AU"
-      }
-      if (lower.includes("parallax")) return "arcseconds"
-      if (lower.includes("mag") || lower.includes("magnitude") || lower.includes("brightness")) {
-        return "magnitude"
-      }
-      if (lower.includes("time") || lower.includes("date") || lower.includes("timestamp")) {
-        return "ISO 8601"
-      }
-      return "unknown"
-    })
+
+      setIngestedDatasets([newDataset, ...ingestedDatasets])
+      setProcessingProgress(100)
+      setUploadSuccess(true)
+      setTimeout(() => setUploadSuccess(false), 3000)
+
+      // Reset state
+      setPendingAnalysis(null)
+      setUnitDialogOpen(false)
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Failed to convert and store dataset")
+      setProcessingProgress(0)
+    } finally {
+      setIsProcessing(false)
+      setProcessingStep("")
+      setTimeout(() => setProcessingProgress(0), 2000)
+    }
+  }
+
+  const handleUnitSelectionCancel = () => {
+    setPendingAnalysis(null)
+    setUnitDialogOpen(false)
+    setUploadError("Dataset ingestion cancelled by user")
   }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,231 +119,84 @@ export default function DataIngestionSection() {
     setUploadError(null)
     setUploadSuccess(false)
     setProcessingStep("")
+    setProcessingProgress(0)
 
     try {
-      // Step 1: Parse the file
+      // STAGE 1: Parse the file
       setProcessingStep("Parsing file…")
+      setProcessingProgress(10)
       const parsedData = await parseFile(file)
       
       if (parsedData.rows.length === 0) {
         throw new Error("File contains no data rows")
       }
 
-      // Detect agency from filename
-      const agency = detectAgency(file.name)
-      const format = file.name.split(".").pop()?.toUpperCase() || "UNKNOWN"
+      // Extract sample rows for LLM (10-15 rows)
+      const sampleRows = parsedData.rows.slice(0, 15)
 
-      // Extract field schemas from metadata if available (for XML files)
-      const fieldSchemas = parsedData.metadata?.fieldSchemas?.map((fs: any) => ({
-        name: fs.name,
-        unit: fs.unit,
-        datatype: fs.datatype,
-        ucd: fs.ucd,
-        xtype: fs.xtype,
-      }))
+      // Determine file type
+      const fileExtension = file.name.split(".").pop()?.toLowerCase() || ""
+      const fileType: "csv" | "json" | "xml" = 
+        fileExtension === "csv" ? "csv" :
+        fileExtension === "json" ? "json" :
+        fileExtension === "xml" ? "xml" :
+        "csv" // default
 
-      // Step 2: Check if AI inference is needed
-      setProcessingStep("Running inference…")
-      const inference = await inferFieldMappings(parsedData, fieldSchemas)
-      
-      // Step 3: If LLM was used, show dialog for validation
-      if (inference.needsValidation) {
-        setPendingParsedData({ parsedData, agency, fileName: file.name })
-        setInferenceResult({ fields: inference.fields, needsValidation: inference.needsValidation })
-        setInferenceDialogOpen(true)
-        setUploading(false)
-        setIsProcessing(false)
-        setProcessingStep("")
-        event.target.value = ""
-        return
-      }
+      // Read raw file text for LLM
+      const rawText = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          resolve(e.target?.result as string)
+        }
+        reader.onerror = () => reject(new Error("Failed to read file"))
+        reader.readAsText(file)
+      })
 
-      // Step 4: Standardize data
-      setProcessingStep("Standardizing units…")
-      const standardizationResult = standardizeData(
-        parsedData.rows,
-        parsedData.headers,
-        file.name, // Use filename as source
-        undefined // No custom mappings if no validation needed
-      )
-      
-      // DEBUG: Verify standardized data before adding to context
-      console.log("Standardized data (no validation):", standardizationResult)
-      console.log("Standardized data count:", standardizationResult.rows.length)
-      console.log("Schema key:", standardizationResult.schemaKey)
-      console.log("Fields:", standardizationResult.fields)
-      
-      // Step 5: Add to unified repository
-      setProcessingStep("Adding to repository…")
-      if (standardizationResult.rows.length > 0) {
-        addStandardizedData(
-          standardizationResult.rows,
-          standardizationResult.schemaKey,
-          file.name,
-          standardizationResult.fields
-        )
-        console.log("Data added to context, total rows:", standardizationResult.rows.length)
-      } else {
-        console.warn("No standardized data to add - array is empty or invalid")
-      }
+      // STAGE 1: Field & Metadata Analysis (llama-3.1-8b ONLY)
+      setProcessingStep("Analyzing fields with AI…")
+      setProcessingProgress(30)
+      const fieldAnalysisResult = await analyzeFieldsWithLLM({
+        filename: file.name,
+        fileType,
+        headers: parsedData.headers,
+        sampleRows: parsedData.rows.slice(0, 5), // First 5 rows only
+        metadata: parsedData.metadata,
+      })
 
-      // Create dataset record
-      const units = inference.fields.map((f) => f.suggestedUnit)
-      const newDataset: IngestedDataset = {
-        name: file.name,
-        agency,
-        format,
-        fields: parsedData.headers,
-        units,
-        status: "completed",
-        uploadedAt: new Date(),
-        previewRows: parsedData.rows.slice(0, 5),
-      }
-
-
-      setIngestedDatasets([newDataset, ...ingestedDatasets])
-      setUploadSuccess(true)
-      setTimeout(() => setUploadSuccess(false), 3000)
-
-      // Reset file input
+      // Show unit selection dialog (blocking modal)
+      setProcessingProgress(50)
+      setPendingAnalysis({
+        fieldAnalysis: fieldAnalysisResult.fields,
+        parsedData: {
+          headers: parsedData.headers,
+          rows: parsedData.rows, // Full dataset for Stage 2
+          metadata: parsedData.metadata,
+        },
+        filename: file.name,
+        fileType,
+      })
+      setUnitDialogOpen(true)
+      setUploading(false)
+      setIsProcessing(false)
+      setProcessingStep("")
       event.target.value = ""
+      return
     } catch (error) {
+      // Error safety: do NOT ingest partial data
       setUploadError(error instanceof Error ? error.message : "Failed to process file")
+      setProcessingProgress(0)
+      if (process.env.NODE_ENV === "development") {
+        console.error("Ingestion error:", error)
+      }
     } finally {
       setUploading(false)
       setIsProcessing(false)
       setProcessingStep("")
-    }
-  }
-
-  const handleInferenceConfirm = (inferences: FieldInference[]) => {
-    if (!pendingParsedData) return
-
-    setIsProcessing(true)
-    setProcessingStep("Standardizing units…")
-
-    try {
-      // Convert inferences to custom mappings
-      const customMappings: CustomFieldMapping[] = inferences.map((inf) => ({
-        originalField: inf.fieldName,
-        canonicalField: inf.suggestedCanonicalField,
-        unit: inf.suggestedUnit,
-      }))
-
-      // Standardize with custom mappings
-      // Use filename as source (more specific than agency)
-      const standardizationResult = standardizeData(
-        pendingParsedData.parsedData.rows,
-        pendingParsedData.parsedData.headers,
-        pendingParsedData.fileName, // Use filename as source
-        customMappings
-      )
-
-      // DEBUG: Verify standardized data before adding to context
-      console.log("Standardized data (with AI inference):", standardizationResult)
-      console.log("Standardized data count:", standardizationResult.rows.length)
-      console.log("Schema key:", standardizationResult.schemaKey)
-      console.log("Fields:", standardizationResult.fields)
-
-      // Add to unified repository
-      setProcessingStep("Adding to repository…")
-      if (standardizationResult.rows.length > 0) {
-        addStandardizedData(
-          standardizationResult.rows,
-          standardizationResult.schemaKey,
-          pendingParsedData.fileName,
-          standardizationResult.fields
-        )
-        console.log("Data added to context, total rows:", standardizationResult.rows.length)
-      } else {
-        console.warn("No standardized data to add - array is empty or invalid")
+      // Keep progress at 100 if successful, reset to 0 if error
+      if (!uploadError) {
+        setTimeout(() => setProcessingProgress(0), 2000)
       }
-    } finally {
-      setIsProcessing(false)
-      setProcessingStep("")
     }
-
-    // Create dataset record
-    const units = inferences.map((f) => f.suggestedUnit)
-    const newDataset: IngestedDataset = {
-      name: pendingParsedData.fileName,
-      agency: pendingParsedData.agency,
-      format: pendingParsedData.fileName.split(".").pop()?.toUpperCase() || "UNKNOWN",
-      fields: pendingParsedData.parsedData.headers,
-      units,
-      status: "completed",
-      uploadedAt: new Date(),
-    }
-
-    setIngestedDatasets([newDataset, ...ingestedDatasets])
-    setUploadSuccess(true)
-    setTimeout(() => setUploadSuccess(false), 3000)
-
-    // Reset state
-    setPendingParsedData(null)
-    setInferenceResult(null)
-    setInferenceDialogOpen(false)
-  }
-
-  const handleInferenceReject = () => {
-    if (!pendingParsedData) return
-
-    setIsProcessing(true)
-    setProcessingStep("Standardizing units…")
-
-    try {
-      // Standardize without custom mappings (use rule-based only)
-      // Use filename as source (more specific than agency)
-      const standardizationResult = standardizeData(
-        pendingParsedData.parsedData.rows,
-        pendingParsedData.parsedData.headers,
-        pendingParsedData.fileName // Use filename as source
-      )
-
-      // DEBUG: Verify standardized data before adding to context
-      console.log("Standardized data (rejected AI inference):", standardizationResult)
-      console.log("Standardized data count:", standardizationResult.rows.length)
-      console.log("Schema key:", standardizationResult.schemaKey)
-      console.log("Fields:", standardizationResult.fields)
-
-      // Add to unified repository
-      setProcessingStep("Adding to repository…")
-      if (standardizationResult.rows.length > 0) {
-        addStandardizedData(
-          standardizationResult.rows,
-          standardizationResult.schemaKey,
-          pendingParsedData.fileName,
-          standardizationResult.fields
-        )
-        console.log("Data added to context, total rows:", standardizationResult.rows.length)
-      } else {
-        console.warn("No standardized data to add - array is empty or invalid")
-      }
-    } finally {
-      setIsProcessing(false)
-      setProcessingStep("")
-    }
-
-    // Create dataset record
-    const units = detectUnits(pendingParsedData.parsedData.headers)
-    const newDataset: IngestedDataset = {
-      name: pendingParsedData.fileName,
-      agency: pendingParsedData.agency,
-      format: pendingParsedData.fileName.split(".").pop()?.toUpperCase() || "UNKNOWN",
-      fields: pendingParsedData.parsedData.headers,
-      units,
-      status: "completed",
-      uploadedAt: new Date(),
-    }
-
-    setIngestedDatasets([newDataset, ...ingestedDatasets])
-    setUploadSuccess(true)
-    setTimeout(() => setUploadSuccess(false), 3000)
-
-    // Reset state
-    setPendingParsedData(null)
-    setInferenceResult(null)
-    setInferenceDialogOpen(false)
   }
 
   return (
@@ -345,15 +226,12 @@ export default function DataIngestionSection() {
             className="cursor-pointer"
           />
           {isProcessing && (
-            <div className="flex items-center gap-3 text-sm text-slate-600">
-              <Loader2 className="animate-spin h-4 w-4" />
-              <span>{processingStep || "Processing astronomical data…"}</span>
-            </div>
-          )}
-          {uploading && !isProcessing && (
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-              Processing file...
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 text-sm text-slate-600">
+                <Loader2 className="animate-spin h-4 w-4" />
+                <span>{processingStep || "Processing astronomical data…"}</span>
+              </div>
+              <Progress value={processingProgress} className="h-2" />
             </div>
           )}
           {uploadSuccess && (
@@ -378,119 +256,42 @@ export default function DataIngestionSection() {
           <Card key={idx} className="p-6 hover:shadow-lg transition-all duration-500 hover:-translate-y-1 hover:scale-[1.02] group/card relative">
             <div className="absolute inset-0 border border-transparent group-hover/card:border-slate-300/50 rounded-lg transition-all duration-300"></div>
             <div className="relative">
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-  <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
-
-  <div className="flex items-center gap-2">
-    {ds.status === "completed" && (
-      <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
-    )}
-
-    <button
-      onClick={() => handleDeleteDataset(idx)}
-      className="text-slate-400 hover:text-red-600 transition-colors"
-      title="Remove dataset"
-    >
-      <X className="w-4 h-4" />
-    </button>
-  </div>
-</div>
-
-              <p className="text-sm text-slate-600">{ds.agency}</p>
-              {ds.uploadedAt && (
-                <p className="text-xs text-slate-500 mt-1">
-                  Uploaded {ds.uploadedAt.toLocaleDateString()}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-3 mb-4">
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Format</p>
-                <p className="text-sm font-mono text-slate-800 bg-slate-100 px-2 py-1 rounded inline-block">
-                  {ds.format}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Field Names</p>
-                <div className="flex flex-wrap gap-2">
-                  {ds.fields.map((f, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-xs text-slate-700 font-mono hover:bg-slate-200 hover:border-slate-300 transition-all duration-200 cursor-default"
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
+                  <div className="flex items-center gap-2">
+                    {ds.status === "completed" && (
+                      <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
+                    )}
+                    <button
+                      onClick={() => handleDeleteDataset(idx)}
+                      className="text-slate-400 hover:text-red-600 transition-colors"
+                      title="Remove dataset"
                     >
-                      {f}
-                    </span>
-                  ))}
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
+                {ds.uploadedAt && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Uploaded {ds.uploadedAt.toLocaleDateString()}
+                  </p>
+                )}
               </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Units</p>
-                <div className="flex flex-wrap gap-2">
-                  {ds.units.map((u, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-slate-600 font-mono hover:bg-blue-100 hover:border-blue-300 transition-all duration-200 cursor-default animate-soft-pulse"
-                      style={{ animationDelay: `${i * 0.1}s` }}
-                    >
-                      {u}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <Button
-            variant="outline"
-            className="w-full hover:scale-[1.02] transition-transform duration-200"
-            disabled={ds.status !== "completed"}
-            onClick={() => setPreviewIndex(previewIndex === idx ? null : idx)}
-          >
-            {previewIndex === idx ? "Hide Preview" : "View Details"}
-          </Button>
-          {previewIndex === idx && ds.previewRows && (
-  <div className="mt-4 overflow-x-auto border rounded-md bg-slate-50">
-    <table className="w-full text-xs font-mono">
-      <thead className="bg-slate-200">
-        <tr>
-          {ds.fields.map((field, i) => (
-            <th key={i} className="px-2 py-1 text-left border">
-              {field}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {ds.previewRows.map((row, rIdx) => (
-          <tr key={rIdx} className="border-t">
-            {ds.fields.map((field, cIdx) => (
-              <td key={cIdx} className="px-2 py-1 border">
-                {String(row[field] ?? "—")}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-)}
-
-
             </div>
           </Card>
         ))}
       </div>
       </div>
 
-      {/* AI Inference Dialog */}
-      {inferenceResult && (
-        <FieldInferenceDialog
-          open={inferenceDialogOpen}
-          onOpenChange={setInferenceDialogOpen}
-          inferences={inferenceResult.fields}
-          onConfirm={handleInferenceConfirm}
-          onReject={handleInferenceReject}
+      {/* Unit Selection Dialog - Blocking modal, no table rendering until confirmed */}
+      {pendingAnalysis && (
+        <UnitSelectionDialog
+          open={unitDialogOpen}
+          onOpenChange={setUnitDialogOpen}
+          fields={pendingAnalysis.fieldAnalysis}
+          onConfirm={handleUnitSelectionConfirm}
+          onCancel={handleUnitSelectionCancel}
         />
       )}
     </section>

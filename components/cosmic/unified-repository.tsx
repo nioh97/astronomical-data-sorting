@@ -1,72 +1,40 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Download } from "lucide-react"
 import { useDataContext, Dataset } from "@/lib/data-context"
-import { StandardizedData } from "@/lib/standardization"
 
 export default function UnifiedRepositorySection() {
   const { datasets } = useDataContext()
 
-  // DEBUG: Verify datasets
-  console.log("Datasets in repository:", datasets)
-  console.log("Dataset count:", datasets.length)
-
   /**
    * Get display value for a field with proper formatting
    */
-  const getDisplayValue = (row: StandardizedData, fieldName: string): string => {
-    switch (fieldName) {
-      case "object_id":
-        return row.object_id || "—"
-      case "object_type":
-        return row.object_type || "—"
-      case "right_ascension_deg":
-        return row.right_ascension_deg !== null && row.right_ascension_deg !== undefined
-          ? row.right_ascension_deg.toFixed(2)
-          : "—"
-      case "declination_deg":
-        return row.declination_deg !== null && row.declination_deg !== undefined
-          ? row.declination_deg.toFixed(2)
-          : "—"
-      case "distance_km":
-        return row.distance_km !== null && row.distance_km !== undefined && row.distance_km > 0
-          ? row.distance_km.toLocaleString()
-          : "—"
-      case "brightness":
-        return row.brightness !== null && row.brightness !== undefined && row.brightness !== 0
-          ? row.brightness.toFixed(1)
-          : "—"
-      case "observation_time":
-        return row.observation_time || "—"
-      case "source":
-        return row.source || "Unknown"
-      default:
-        return "—"
+  const getDisplayValue = (row: Record<string, any>, columnName: string): string => {
+    const value = row[columnName]
+    if (value === null || value === undefined) {
+      return "—"
     }
+    if (typeof value === "number") {
+      // Format numbers appropriately
+      if (value === 0) return "0"
+      if (Math.abs(value) < 0.01 || Math.abs(value) > 1e6) {
+        return value.toExponential(2)
+      }
+      return value.toLocaleString(undefined, { maximumFractionDigits: 3 })
+    }
+    return String(value)
   }
 
   /**
-   * Get header label with unit
+   * Get header label with semantic type and unit
    */
-  const getHeaderLabel = (fieldName: string, unit: string): string => {
-    const labels: Record<string, string> = {
-      object_id: "Object ID",
-      object_type: "Type",
-      right_ascension_deg: "RA",
-      declination_deg: "Dec",
-      distance_km: "Distance",
-      brightness: "Brightness",
-      observation_time: "Observation Time",
-      source: "Source",
-    }
-    const baseLabel = labels[fieldName] || fieldName
-    if (unit && unit !== "none" && unit !== "") {
-      return `${baseLabel} (${unit})`
-    }
-    return baseLabel
+  const getHeaderLabel = (column: { name: string; semanticType: string; unit: string | null }): string => {
+    const unitLabel = column.unit && column.unit !== "none" && column.unit !== "" ? ` (${column.unit})` : ""
+    return `${column.name}${unitLabel}`
   }
 
   /**
@@ -77,17 +45,16 @@ export default function UnifiedRepositorySection() {
 
     datasets.forEach((dataset) => {
       // Add dataset header
-      csvLines.push(`Dataset: ${dataset.source}`)
-      csvLines.push(`Schema: ${dataset.schemaKey}`)
+      csvLines.push(`Dataset: ${dataset.name}`)
       csvLines.push("")
 
       // Add column headers
-      const headers = dataset.fields.map((f) => getHeaderLabel(f.name, f.unit))
+      const headers = dataset.columns.map((col) => getHeaderLabel(col))
       csvLines.push(headers.join(","))
 
       // Add rows
       dataset.rows.forEach((row) => {
-        const values = dataset.fields.map((f) => getDisplayValue(row, f.name))
+        const values = dataset.columns.map((col) => getDisplayValue(row, col.name))
         csvLines.push(values.join(","))
       })
 
@@ -130,24 +97,37 @@ export default function UnifiedRepositorySection() {
             <Card key={dataset.id} className="p-6 border-slate-200">
               <div className="mb-4">
                 <h3 className="text-lg font-semibold text-slate-900 mb-1">
-                  Source: {dataset.source}
+                  {dataset.name}
                 </h3>
-                <p className="text-xs text-slate-500 font-mono">Schema: {dataset.schemaKey}</p>
-                <p className="text-sm text-slate-600 mt-2">
-                  {dataset.rows.length} object{dataset.rows.length !== 1 ? "s" : ""}
-                </p>
+                <div className="flex items-center gap-4 text-sm text-slate-600 mt-2">
+                  <span>
+                    {dataset.rows.length} row{dataset.rows.length !== 1 ? "s" : ""} • {dataset.columns.length} column{dataset.columns.length !== 1 ? "s" : ""}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Source: {dataset.sourceFile}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {new Date(dataset.createdAt).toLocaleString()}
+                  </span>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      {dataset.fields.map((field) => (
+                      {dataset.columns.map((column) => (
                         <th
-                          key={field.name}
+                          key={column.name}
                           className="text-left py-3 px-4 text-slate-900 font-semibold"
+                          title={`${column.description || ""} | Type: ${column.semanticType}`}
                         >
-                          {getHeaderLabel(field.name, field.unit)}
+                          <div className="flex flex-col gap-1">
+                            <span>{getHeaderLabel(column)}</span>
+                            <Badge variant="outline" className="text-xs w-fit">
+                              {column.semanticType}
+                            </Badge>
+                          </div>
                         </th>
                       ))}
                     </tr>
@@ -155,34 +135,16 @@ export default function UnifiedRepositorySection() {
                   <tbody>
                     {dataset.rows.length === 0 ? (
                       <tr>
-                        <td colSpan={dataset.fields.length} className="py-8 text-center text-slate-500">
+                        <td colSpan={dataset.columns.length} className="py-8 text-center text-slate-500">
                           No data rows
                         </td>
                       </tr>
                     ) : (
                       dataset.rows.map((row, idx) => (
                         <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition">
-                          {dataset.fields.map((field) => (
-                            <td key={field.name} className="py-3 px-4 text-slate-600">
-                              {field.name === "object_id" ? (
-                                <span className="font-mono text-slate-800">
-                                  {getDisplayValue(row, field.name)}
-                                </span>
-                              ) : field.name === "source" ? (
-                                <span
-                                  className={`px-2 py-1 rounded text-xs font-semibold ${
-                                    getDisplayValue(row, field.name) === "NASA"
-                                      ? "bg-orange-100 text-orange-800"
-                                      : getDisplayValue(row, field.name) === "ESA"
-                                        ? "bg-blue-100 text-blue-800"
-                                        : "bg-purple-100 text-purple-800"
-                                  }`}
-                                >
-                                  {getDisplayValue(row, field.name)}
-                                </span>
-                              ) : (
-                                getDisplayValue(row, field.name)
-                              )}
+                          {dataset.columns.map((column) => (
+                            <td key={column.name} className="py-3 px-4 text-slate-600">
+                              {getDisplayValue(row, column.name)}
                             </td>
                           ))}
                         </tr>

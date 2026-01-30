@@ -13,7 +13,6 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { useDataContext } from "@/lib/data-context"
-import { StandardizedData } from "@/lib/standardization"
 
 /**
  * Custom tooltip for scatter plot
@@ -65,10 +64,11 @@ export default function VisualizationSection() {
 
     // Aggregate data from all datasets
     datasets.forEach((dataset) => {
-      dataset.rows.forEach((row: StandardizedData) => {
+      dataset.rows.forEach((row) => {
         // Only include rows where BOTH distance and brightness are valid
-        const distance = row.distance_km
-        const brightness = row.brightness
+        // Look for distance in various canonical names
+        const distance = row.distance_km || row.distance || row.dist
+        const brightness = row.brightness || row.magnitude || row.mag
 
         // Check for valid values (not null, undefined, NaN, or zero for distance)
         if (
@@ -84,7 +84,7 @@ export default function VisualizationSection() {
           allData.push({
             distance,
             brightness,
-            object_id: row.object_id,
+            object_id: row.object_id || row.id || row.name || undefined,
           })
         }
       })
@@ -98,8 +98,8 @@ export default function VisualizationSection() {
     const agencyMap = new Map<string, number>()
 
     datasets.forEach((dataset) => {
-      dataset.rows.forEach((row: StandardizedData) => {
-        const source = row.source || "Unknown"
+      dataset.rows.forEach((row) => {
+        const source = dataset.sourceFile || dataset.name || "Unknown"
         agencyMap.set(source, (agencyMap.get(source) || 0) + 1)
       })
     })
