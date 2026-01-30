@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Upload, FileText, CheckCircle2, AlertCircle } from "lucide-react"
+import { Upload, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { parseFile } from "@/lib/file-parsers"
 import { standardizeData, CustomFieldMapping } from "@/lib/standardization"
@@ -27,6 +27,8 @@ export default function DataIngestionSection() {
   const { addStandardizedData } = useDataContext()
   const [ingestedDatasets, setIngestedDatasets] = useState<IngestedDataset[]>([])
   const [uploading, setUploading] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [processingStep, setProcessingStep] = useState<string>("")
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [inferenceDialogOpen, setInferenceDialogOpen] = useState(false)
@@ -77,11 +79,14 @@ export default function DataIngestionSection() {
     if (!file) return
 
     setUploading(true)
+    setIsProcessing(true)
     setUploadError(null)
     setUploadSuccess(false)
+    setProcessingStep("")
 
     try {
-      // Parse the file
+      // Step 1: Parse the file
+      setProcessingStep("Parsing file…")
       const parsedData = await parseFile(file)
       
       if (parsedData.rows.length === 0) {
@@ -101,10 +106,8 @@ export default function DataIngestionSection() {
         xtype: fs.xtype,
       }))
 
-      // Step 1: Try rule-based standardization first
-      const standardized = standardizeData(parsedData.rows, parsedData.headers, agency)
-      
       // Step 2: Check if AI inference is needed
+      setProcessingStep("Running inference…")
       const inference = await inferFieldMappings(parsedData, fieldSchemas)
       
       // Step 3: If LLM was used, show dialog for validation
@@ -113,13 +116,40 @@ export default function DataIngestionSection() {
         setInferenceResult({ fields: inference.fields, needsValidation: inference.needsValidation })
         setInferenceDialogOpen(true)
         setUploading(false)
+        setIsProcessing(false)
+        setProcessingStep("")
         event.target.value = ""
         return
       }
 
-      // If no validation needed, proceed directly
-      // Add to unified repository
-      addStandardizedData(standardized)
+      // Step 4: Standardize data
+      setProcessingStep("Standardizing units…")
+      const standardizationResult = standardizeData(
+        parsedData.rows,
+        parsedData.headers,
+        file.name, // Use filename as source
+        undefined // No custom mappings if no validation needed
+      )
+      
+      // DEBUG: Verify standardized data before adding to context
+      console.log("Standardized data (no validation):", standardizationResult)
+      console.log("Standardized data count:", standardizationResult.rows.length)
+      console.log("Schema key:", standardizationResult.schemaKey)
+      console.log("Fields:", standardizationResult.fields)
+      
+      // Step 5: Add to unified repository
+      setProcessingStep("Adding to repository…")
+      if (standardizationResult.rows.length > 0) {
+        addStandardizedData(
+          standardizationResult.rows,
+          standardizationResult.schemaKey,
+          file.name,
+          standardizationResult.fields
+        )
+        console.log("Data added to context, total rows:", standardizationResult.rows.length)
+      } else {
+        console.warn("No standardized data to add - array is empty or invalid")
+      }
 
       // Create dataset record
       const units = inference.fields.map((f) => f.suggestedUnit)
@@ -143,29 +173,57 @@ export default function DataIngestionSection() {
       setUploadError(error instanceof Error ? error.message : "Failed to process file")
     } finally {
       setUploading(false)
+      setIsProcessing(false)
+      setProcessingStep("")
     }
   }
 
   const handleInferenceConfirm = (inferences: FieldInference[]) => {
     if (!pendingParsedData) return
 
-    // Convert inferences to custom mappings
-    const customMappings: CustomFieldMapping[] = inferences.map((inf) => ({
-      originalField: inf.fieldName,
-      canonicalField: inf.suggestedCanonicalField,
-      unit: inf.suggestedUnit,
-    }))
+    setIsProcessing(true)
+    setProcessingStep("Standardizing units…")
 
-    // Standardize with custom mappings
-    const standardized = standardizeData(
-      pendingParsedData.parsedData.rows,
-      pendingParsedData.parsedData.headers,
-      pendingParsedData.agency,
-      customMappings
-    )
+    try {
+      // Convert inferences to custom mappings
+      const customMappings: CustomFieldMapping[] = inferences.map((inf) => ({
+        originalField: inf.fieldName,
+        canonicalField: inf.suggestedCanonicalField,
+        unit: inf.suggestedUnit,
+      }))
 
-    // Add to unified repository
-    addStandardizedData(standardized)
+      // Standardize with custom mappings
+      // Use filename as source (more specific than agency)
+      const standardizationResult = standardizeData(
+        pendingParsedData.parsedData.rows,
+        pendingParsedData.parsedData.headers,
+        pendingParsedData.fileName, // Use filename as source
+        customMappings
+      )
+
+      // DEBUG: Verify standardized data before adding to context
+      console.log("Standardized data (with AI inference):", standardizationResult)
+      console.log("Standardized data count:", standardizationResult.rows.length)
+      console.log("Schema key:", standardizationResult.schemaKey)
+      console.log("Fields:", standardizationResult.fields)
+
+      // Add to unified repository
+      setProcessingStep("Adding to repository…")
+      if (standardizationResult.rows.length > 0) {
+        addStandardizedData(
+          standardizationResult.rows,
+          standardizationResult.schemaKey,
+          pendingParsedData.fileName,
+          standardizationResult.fields
+        )
+        console.log("Data added to context, total rows:", standardizationResult.rows.length)
+      } else {
+        console.warn("No standardized data to add - array is empty or invalid")
+      }
+    } finally {
+      setIsProcessing(false)
+      setProcessingStep("")
+    }
 
     // Create dataset record
     const units = inferences.map((f) => f.suggestedUnit)
@@ -192,15 +250,41 @@ export default function DataIngestionSection() {
   const handleInferenceReject = () => {
     if (!pendingParsedData) return
 
-    // Standardize without custom mappings (use rule-based only)
-    const standardized = standardizeData(
-      pendingParsedData.parsedData.rows,
-      pendingParsedData.parsedData.headers,
-      pendingParsedData.agency
-    )
+    setIsProcessing(true)
+    setProcessingStep("Standardizing units…")
 
-    // Add to unified repository
-    addStandardizedData(standardized)
+    try {
+      // Standardize without custom mappings (use rule-based only)
+      // Use filename as source (more specific than agency)
+      const standardizationResult = standardizeData(
+        pendingParsedData.parsedData.rows,
+        pendingParsedData.parsedData.headers,
+        pendingParsedData.fileName // Use filename as source
+      )
+
+      // DEBUG: Verify standardized data before adding to context
+      console.log("Standardized data (rejected AI inference):", standardizationResult)
+      console.log("Standardized data count:", standardizationResult.rows.length)
+      console.log("Schema key:", standardizationResult.schemaKey)
+      console.log("Fields:", standardizationResult.fields)
+
+      // Add to unified repository
+      setProcessingStep("Adding to repository…")
+      if (standardizationResult.rows.length > 0) {
+        addStandardizedData(
+          standardizationResult.rows,
+          standardizationResult.schemaKey,
+          pendingParsedData.fileName,
+          standardizationResult.fields
+        )
+        console.log("Data added to context, total rows:", standardizationResult.rows.length)
+      } else {
+        console.warn("No standardized data to add - array is empty or invalid")
+      }
+    } finally {
+      setIsProcessing(false)
+      setProcessingStep("")
+    }
 
     // Create dataset record
     const units = detectUnits(pendingParsedData.parsedData.headers)
@@ -247,10 +331,16 @@ export default function DataIngestionSection() {
             type="file"
             accept=".csv,.json,.fits,.xml"
             onChange={handleFileUpload}
-            disabled={uploading}
+            disabled={uploading || isProcessing}
             className="cursor-pointer"
           />
-          {uploading && (
+          {isProcessing && (
+            <div className="flex items-center gap-3 text-sm text-slate-600">
+              <Loader2 className="animate-spin h-4 w-4" />
+              <span>{processingStep || "Processing astronomical data…"}</span>
+            </div>
+          )}
+          {uploading && !isProcessing && (
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
               Processing file...

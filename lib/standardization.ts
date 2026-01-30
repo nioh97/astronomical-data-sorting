@@ -52,6 +52,13 @@ export const FIELD_MAPPINGS: Record<string, string> = {
   "vmag": "brightness",
   "v_mag": "brightness",
   "visual_magnitude": "brightness",
+  // Color Index variations
+  "b-v": "color_index",
+  "b_v": "color_index",
+  "u-b": "color_index",
+  "u_b": "color_index",
+  "color_index": "color_index",
+  "colorindex": "color_index",
   // Object type variations
   type: "object_type",
   "object_type": "object_type",
@@ -159,7 +166,10 @@ function detectUnit(fieldName: string, value: any, headers: string[]): string {
     return "arcseconds"
   }
   if (lowerField.includes("mag") || lowerField.includes("magnitude") || lowerField.includes("brightness")) {
-    return "magnitude"
+    return "mag" // Return "mag" instead of "magnitude" for consistency
+  }
+  if (lowerField.includes("color") || lowerField.includes("b-v") || lowerField.includes("u-b")) {
+    return "mag" // Color index is also in magnitudes
   }
   
   return ""
@@ -171,14 +181,50 @@ export interface CustomFieldMapping {
   unit: string
 }
 
+/**
+ * Canonical field definition with unit information
+ */
+export interface CanonicalField {
+  name: string
+  unit: string
+}
+
+/**
+ * Standardization result with field definitions
+ */
+export interface StandardizationResult {
+  rows: StandardizedData[]
+  fields: CanonicalField[]
+  schemaKey: string
+}
+
+/**
+ * Generate a deterministic schema key from canonical fields
+ * Same schema (fields + units) = same key
+ */
+export function generateSchemaKey(fields: CanonicalField[]): string {
+  // Sort fields by name for deterministic ordering
+  const sorted = [...fields].sort((a, b) => a.name.localeCompare(b.name))
+  // Create signature: "field1:unit1|field2:unit2|..."
+  const signature = sorted.map((f) => `${f.name}:${f.unit}`).join("|")
+  // Simple hash function (deterministic)
+  let hash = 0
+  for (let i = 0; i < signature.length; i++) {
+    const char = signature.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  return `schema_${Math.abs(hash).toString(36)}`
+}
+
 export function standardizeData(
   rawData: Record<string, any>[],
   headers: string[],
   source: string,
   customMappings?: CustomFieldMapping[]
-): StandardizedData[] {
+): StandardizationResult {
   if (rawData.length === 0) {
-    return []
+    return { rows: [], fields: [], schemaKey: "" }
   }
 
   // Build mapping dictionary from custom mappings
@@ -192,7 +238,7 @@ export function standardizeData(
     })
   }
 
-  return rawData.map((row, index) => {
+  const standardizedRows = rawData.map((row, index) => {
     const standardized: Partial<StandardizedData> = {
       source,
       original_data: row,
@@ -226,38 +272,51 @@ export function standardizeData(
       }
     })
 
-    // Extract and convert values
+    // Extract and convert values with proper unit handling
     // Right Ascension
     if (mappedFields.right_ascension !== undefined) {
-      const value = parseFloat(mappedFields.right_ascension)
+      const value = parseFloat(String(mappedFields.right_ascension))
       if (!isNaN(value)) {
-        const unit = fieldUnits.right_ascension || detectUnit("right_ascension", value, headers)
+        // Use custom mapping unit if available, otherwise detect from field name
+        const unit = fieldUnits.right_ascension || detectUnit("right_ascension", value, headers) || "degrees"
         standardized.right_ascension_deg = convertToDegrees(value, unit)
       }
     }
 
     // Declination
     if (mappedFields.declination !== undefined) {
-      const value = parseFloat(mappedFields.declination)
+      const value = parseFloat(String(mappedFields.declination))
       if (!isNaN(value)) {
-        const unit = fieldUnits.declination || detectUnit("declination", value, headers)
+        // Use custom mapping unit if available, otherwise detect from field name
+        const unit = fieldUnits.declination || detectUnit("declination", value, headers) || "degrees"
         standardized.declination_deg = convertToDegrees(value, unit)
       }
     }
 
     // Distance
     if (mappedFields.distance !== undefined) {
-      const value = parseFloat(mappedFields.distance)
+      const value = parseFloat(String(mappedFields.distance))
       if (!isNaN(value)) {
-        const unit = fieldUnits.distance || detectUnit("distance", value, headers)
+        // Use custom mapping unit if available, otherwise detect from field name
+        const unit = fieldUnits.distance || detectUnit("distance", value, headers) || "AU"
         standardized.distance_km = convertToKilometers(value, unit)
       }
     }
 
-    // Brightness
+    // Brightness (magnitude - no unit conversion needed, stored as-is)
     if (mappedFields.brightness !== undefined) {
-      const value = parseFloat(mappedFields.brightness)
+      const value = parseFloat(String(mappedFields.brightness))
       if (!isNaN(value)) {
+        standardized.brightness = value
+      }
+    }
+
+    // Color Index (also stored as brightness/magnitude, but we track it separately if needed)
+    // Note: color_index fields are typically stored as brightness values in the standardized format
+    if (mappedFields.color_index !== undefined) {
+      const value = parseFloat(String(mappedFields.color_index))
+      if (!isNaN(value) && standardized.brightness === undefined) {
+        // If brightness not already set, use color_index as brightness
         standardized.brightness = value
       }
     }
@@ -304,5 +363,44 @@ export function standardizeData(
       original_data: standardized.original_data,
     } as StandardizedData
   })
+
+  // Always include common fields that are always present in StandardizedData
+  // These are guaranteed to exist after standardization
+  const allFields: CanonicalField[] = [
+    { name: "object_id", unit: "none" },
+    { name: "object_type", unit: "none" },
+    { name: "right_ascension_deg", unit: "degrees" },
+    { name: "declination_deg", unit: "degrees" },
+    { name: "distance_km", unit: "km" },
+    { name: "brightness", unit: "mag" },
+    { name: "observation_time", unit: "ISO 8601" },
+    { name: "source", unit: "none" },
+  ]
+
+  // Filter to only include fields that have non-zero/non-empty values in at least one row
+  const activeFields = allFields.filter((field) => {
+    return standardizedRows.some((row) => {
+      const value = (row as any)[field.name]
+      if (value === null || value === undefined) return false
+      if (typeof value === "number") {
+        // For numeric fields, include if non-zero
+        return value !== 0
+      }
+      if (typeof value === "string") {
+        // For string fields, include if non-empty and not "Unknown"
+        return value !== "" && value !== "Unknown"
+      }
+      return true
+    })
+  })
+
+  // Generate schema key from active fields
+  const schemaKey = generateSchemaKey(activeFields)
+
+  return {
+    rows: standardizedRows,
+    fields: activeFields,
+    schemaKey,
+  }
 }
 

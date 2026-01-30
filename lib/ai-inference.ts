@@ -22,11 +22,20 @@ export interface InferenceResult {
 }
 
 /**
- * LLM Response Interface
+ * LLM Response Interface (general)
  */
 interface LLMInferenceResponse {
   canonical_field: string | null
   unit: string
+  confidence: number
+  reasoning: string
+}
+
+/**
+ * LLM Response Interface (photometric only - no unit inference)
+ */
+interface LLMPhotometricResponse {
+  canonical_field: "brightness" | "color_index" | null
   confidence: number
   reasoning: string
 }
@@ -39,12 +48,18 @@ const ALLOWED_CANONICAL_FIELDS = [
   "declination",
   "distance",
   "brightness",
+  "color_index",
   "object_id",
   "object_type",
   "observation_time",
 ] as const
 
 type CanonicalField = typeof ALLOWED_CANONICAL_FIELDS[number] | null
+
+/**
+ * Photometric canonical fields (for LLM fallback)
+ */
+const PHOTOMETRIC_CANONICAL_FIELDS = ["brightness", "color_index"] as const
 
 /**
  * Field metadata from XML parsing
@@ -99,7 +114,12 @@ function ruleBasedUnitDetection(fieldName: string, canonicalField: string | null
   
   // Brightness
   if (canonicalField === "brightness") {
-    return "magnitude"
+    return "mag"
+  }
+  
+  // Color Index
+  if (canonicalField === "color_index") {
+    return "mag"
   }
   
   // Time
@@ -150,7 +170,80 @@ function analyzeValueRange(sampleValues: any[]): { min: number; max: number; avg
 }
 
 /**
- * Checks if field needs LLM inference
+ * Checks if field is blocked by metadata rules
+ */
+function isBlockedByMetadataRules(metadata?: FieldMetadata): boolean {
+  if (!metadata) return false
+  
+  // Rule: datatype="char" → no inference needed
+  if (metadata.datatype === "char" || metadata.datatype === "string") {
+    return true
+  }
+  
+  // Rule: xtype="hms" or "dms" → formatted coordinate text
+  if (metadata.xtype === "hms" || metadata.xtype === "dms") {
+    return true
+  }
+  
+  // Rule: UCD starts with "meta." or contains "ID" → identifier field
+  if (metadata.ucd) {
+    const ucdLower = metadata.ucd.toLowerCase()
+    if (ucdLower.startsWith("meta.") || ucdLower.includes("id")) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+/**
+ * Checks if field is photometric and eligible for LLM fallback
+ */
+function isPhotometricEligibleForLLM(
+  fieldName: string,
+  metadata: FieldMetadata | undefined,
+  canonicalField: string | null,
+  confidence: number
+): boolean {
+  // Must have metadata to check datatype
+  if (!metadata) return false
+  
+  // Rule 1: datatype must be numeric (float, double, int)
+  const numericTypes = ["float", "double", "int", "integer", "number"]
+  if (!numericTypes.includes(metadata.datatype?.toLowerCase() || "")) {
+    return false
+  }
+  
+  // Rule 2: Field must not be blocked by metadata rules
+  if (isBlockedByMetadataRules(metadata)) {
+    return false
+  }
+  
+  // Rule 3: Canonical field confidence < 0.7
+  if (confidence >= 0.7) {
+    return false
+  }
+  
+  // Rule 4: Field name OR UCD must suggest photometry
+  const fieldNameLower = fieldName.toLowerCase()
+  const ucdLower = metadata.ucd?.toLowerCase() || ""
+  
+  const photometricNamePatterns = ["mag", "flux", "brightness", "lum", "color"]
+  const hasPhotometricName = photometricNamePatterns.some((pattern) =>
+    fieldNameLower.includes(pattern)
+  )
+  
+  const hasPhotometricUCD = ucdLower.includes("phot.")
+  
+  if (!hasPhotometricName && !hasPhotometricUCD) {
+    return false
+  }
+  
+  return true
+}
+
+/**
+ * Checks if field needs LLM inference (general case - non-photometric)
  */
 function needsLLMInference(
   fieldName: string,
@@ -163,7 +256,7 @@ function needsLLMInference(
     return false
   }
   
-  // If unit is unknown or confidence is low, use LLM
+  // If unit is unknown or confidence is low, use LLM (for non-photometric fields)
   if (unit === "unknown" || confidence < 0.6) {
     return true
   }
@@ -172,7 +265,136 @@ function needsLLMInference(
 }
 
 /**
- * Calls Ollama qwen2.5:3b for field and unit inference
+ * Calls Ollama qwen2.5:3b for photometric field classification ONLY
+ * LLM does NOT infer units - units are determined by canonical field type
+ */
+async function callOllamaForPhotometricField(
+  fieldName: string,
+  sampleValues: any[],
+  valueRange: { min: number; max: number; avg: number } | null,
+  metadata: FieldMetadata,
+  currentCanonicalField?: string | null
+): Promise<LLMPhotometricResponse | null> {
+  try {
+    // Prepare structured input (NO raw files, NO full datasets)
+    const input = {
+      field_name: fieldName,
+      ucd: metadata.ucd || null,
+      datatype: metadata.datatype || "unknown",
+      sample_values: sampleValues.slice(0, 10).map(String),
+      value_range: valueRange || null,
+      current_guess: currentCanonicalField || null,
+      allowed_canonical_fields: PHOTOMETRIC_CANONICAL_FIELDS,
+    }
+
+    // Construct prompt focused ONLY on photometric canonical field classification
+    const prompt = `You are an astronomical data expert. Classify this photometric field's semantic meaning into one canonical field type.
+
+Field Information:
+- Name: ${input.field_name}
+- UCD: ${input.ucd || "not provided"}
+- Datatype: ${input.datatype}
+- Sample values: ${input.sample_values.join(", ")}
+- Value range: ${input.value_range ? `min=${input.value_range.min}, max=${input.value_range.max}, avg=${input.value_range.avg.toFixed(2)}` : "not available"}
+- Current rule-based guess: ${input.current_guess || "none"}
+
+Allowed Canonical Fields (PHOTOMETRIC ONLY):
+- brightness: Magnitude, flux, or luminosity measurements (e.g., Vmag, Bmag, apparent magnitude)
+- color_index: Color index measurements (e.g., B-V, U-B, color differences)
+
+Rules:
+- brightness: Single magnitude or flux value (typically negative to positive, e.g., 4.5, -1.2, 12.3)
+- color_index: Difference between two magnitudes (can be negative or positive, typically -0.5 to 2.0, e.g., 0.5, -0.2, 1.1)
+- If field name contains "color" or UCD contains "phot.color" → likely color_index
+- If field name is a magnitude (Vmag, Bmag, etc.) or UCD contains "phot.mag" → likely brightness
+- Be conservative - only suggest if confident (confidence >= 0.6)
+- If uncertain, return null for canonical_field
+
+IMPORTANT CONSTRAINTS:
+- Do NOT suggest units (units are determined automatically by canonical field type)
+- Do NOT override explicit metadata
+- Do NOT suggest fields outside the allowed list
+- brightness → unit is automatically "mag"
+- color_index → unit is automatically "mag"
+
+Respond with ONLY valid JSON:
+{
+  "canonical_field": "brightness | color_index | null",
+  "confidence": 0.0-1.0,
+  "reasoning": "1-2 sentence explanation"
+}`
+
+    // Call Ollama API
+    const response = await fetch("http://localhost:11434/api/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "qwen2.5:3b",
+        prompt: prompt,
+        stream: false,
+        options: {
+          temperature: 0.2, // Low temperature for deterministic output
+          num_predict: 200, // Limit response length
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      console.warn("Ollama API call failed:", response.statusText)
+      return null // Silent fallback
+    }
+
+    const data = await response.json()
+    const responseText = data.response || ""
+
+    // Extract JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      console.warn("No JSON found in LLM response")
+      return null
+    }
+
+    let parsed: LLMPhotometricResponse
+    try {
+      parsed = JSON.parse(jsonMatch[0])
+    } catch (e) {
+      console.warn("Failed to parse LLM JSON response:", e)
+      return null
+    }
+
+    // Validate response structure
+    if (
+      typeof parsed.confidence !== "number" ||
+      parsed.confidence < 0 ||
+      parsed.confidence > 1 ||
+      (parsed.canonical_field !== null && !PHOTOMETRIC_CANONICAL_FIELDS.includes(parsed.canonical_field)) ||
+      typeof parsed.reasoning !== "string"
+    ) {
+      console.warn("Invalid LLM response structure")
+      return null
+    }
+
+    // Validate confidence threshold
+    if (parsed.confidence < 0.6) {
+      return null // Confidence too low
+    }
+
+    // Final validation: check if conflicts with metadata rules
+    if (isBlockedByMetadataRules(metadata)) {
+      return null // Conflicts with metadata rules
+    }
+
+    return parsed
+  } catch (error) {
+    console.warn("Error calling Ollama for photometric field:", error)
+    return null // Silent fallback
+  }
+}
+
+/**
+ * Calls Ollama qwen2.5:3b for field and unit inference (non-photometric fields)
  */
 async function callOllamaForInference(
   fieldName: string,
@@ -365,8 +587,45 @@ export async function inferFieldMappings(
       : `Rule-based mapping: No match found for "${fieldName}"`
     let source: "rule" | "llm" = "rule"
 
-    // Step 2: Check if LLM inference is needed
-    if (needsLLMInference(fieldName, canonicalField, unit, confidence)) {
+    // Step 2: Check if photometric LLM inference is needed
+    if (isPhotometricEligibleForLLM(fieldName, metadata, canonicalField, confidence)) {
+      // Get sample values
+      const sampleValues = getSampleValues(parsedData, fieldName, 10)
+      
+      if (sampleValues.length > 0 && metadata) {
+        // Analyze value range
+        const valueRange = analyzeValueRange(sampleValues)
+        
+        // Call specialized photometric LLM (only returns canonical field, not unit)
+        const llmResponse = await callOllamaForPhotometricField(
+          fieldName,
+          sampleValues,
+          valueRange,
+          metadata,
+          canonicalField
+        )
+
+        if (llmResponse && llmResponse.canonical_field) {
+          // Use LLM canonical field suggestion
+          canonicalField = llmResponse.canonical_field
+          // Unit is determined by canonical field type (brightness/color_index → "mag")
+          // BUT preserve explicit metadata unit if it exists
+          if (metadata.unit && metadata.unit !== "unknown") {
+            // Metadata has explicit unit - preserve it (respects metadata priority)
+            unit = metadata.unit
+          } else if (canonicalField === "brightness" || canonicalField === "color_index") {
+            // No explicit metadata unit - set based on canonical field type
+            unit = "mag"
+          }
+          confidence = llmResponse.confidence
+          reasoning = `LLM photometric inference: ${llmResponse.reasoning}`
+          source = "llm"
+          needsValidation = true
+        }
+      }
+    }
+    // Step 3: Check if general LLM inference is needed (non-photometric fields)
+    else if (needsLLMInference(fieldName, canonicalField, unit, confidence)) {
       // Get sample values
       const sampleValues = getSampleValues(parsedData, fieldName, 10)
       
@@ -374,7 +633,7 @@ export async function inferFieldMappings(
         // Analyze value range
         const valueRange = analyzeValueRange(sampleValues)
         
-        // Call LLM
+        // Call general LLM (for non-photometric fields)
         const llmResponse = await callOllamaForInference(
           fieldName,
           sampleValues,

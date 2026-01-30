@@ -3,207 +3,205 @@
 import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Download, Search } from "lucide-react"
-import { useDataContext } from "@/lib/data-context"
+import { Download } from "lucide-react"
+import { useDataContext, Dataset } from "@/lib/data-context"
 import { StandardizedData } from "@/lib/standardization"
 
-interface UnifiedData {
-  object_id: string
-  object_type: string
-  ra: number
-  dec: number
-  distance: number
-  brightness: number
-  observation_time: string
-  source: string
-}
-
 export default function UnifiedRepositorySection() {
-  const { unifiedData: contextData } = useDataContext()
-  const [selectedAgency, setSelectedAgency] = useState<string>("All")
-  const [selectedType, setSelectedType] = useState<string>("All")
-  const [searchQuery, setSearchQuery] = useState<string>("")
+  const { datasets } = useDataContext()
 
-  // Convert StandardizedData to UnifiedData format for display
-  const unifiedData: UnifiedData[] = useMemo(() => {
-    return contextData.map((data) => ({
-      object_id: data.object_id,
-      object_type: data.object_type,
-      ra: data.right_ascension_deg,
-      dec: data.declination_deg,
-      distance: data.distance_km,
-      brightness: data.brightness,
-      observation_time: data.observation_time,
-      source: data.source,
-    }))
-  }, [contextData])
+  // DEBUG: Verify datasets
+  console.log("Datasets in repository:", datasets)
+  console.log("Dataset count:", datasets.length)
 
-  const filteredData = useMemo(() => {
-    return unifiedData.filter((row) => {
-      const matchesAgency = selectedAgency === "All" || row.source === selectedAgency
-      const matchesType = selectedType === "All" || row.object_type === selectedType
-      const matchesSearch =
-        searchQuery === "" ||
-        row.object_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        row.object_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        row.source.toLowerCase().includes(searchQuery.toLowerCase())
+  /**
+   * Get display value for a field with proper formatting
+   */
+  const getDisplayValue = (row: StandardizedData, fieldName: string): string => {
+    switch (fieldName) {
+      case "object_id":
+        return row.object_id || "—"
+      case "object_type":
+        return row.object_type || "—"
+      case "right_ascension_deg":
+        return row.right_ascension_deg !== null && row.right_ascension_deg !== undefined
+          ? row.right_ascension_deg.toFixed(2)
+          : "—"
+      case "declination_deg":
+        return row.declination_deg !== null && row.declination_deg !== undefined
+          ? row.declination_deg.toFixed(2)
+          : "—"
+      case "distance_km":
+        return row.distance_km !== null && row.distance_km !== undefined && row.distance_km > 0
+          ? row.distance_km.toLocaleString()
+          : "—"
+      case "brightness":
+        return row.brightness !== null && row.brightness !== undefined && row.brightness !== 0
+          ? row.brightness.toFixed(1)
+          : "—"
+      case "observation_time":
+        return row.observation_time || "—"
+      case "source":
+        return row.source || "Unknown"
+      default:
+        return "—"
+    }
+  }
 
-      return matchesAgency && matchesType && matchesSearch
-    })
-  }, [selectedAgency, selectedType, searchQuery])
+  /**
+   * Get header label with unit
+   */
+  const getHeaderLabel = (fieldName: string, unit: string): string => {
+    const labels: Record<string, string> = {
+      object_id: "Object ID",
+      object_type: "Type",
+      right_ascension_deg: "RA",
+      declination_deg: "Dec",
+      distance_km: "Distance",
+      brightness: "Brightness",
+      observation_time: "Observation Time",
+      source: "Source",
+    }
+    const baseLabel = labels[fieldName] || fieldName
+    if (unit && unit !== "none" && unit !== "") {
+      return `${baseLabel} (${unit})`
+    }
+    return baseLabel
+  }
 
+  /**
+   * Export all datasets to CSV
+   */
   const handleExport = () => {
-    const csvContent = [
-      ["Object ID", "Type", "RA (°)", "Dec (°)", "Distance (km)", "Brightness", "Source", "Observation Time"],
-      ...filteredData.map((row) => [
-        row.object_id,
-        row.object_type,
-        row.ra.toFixed(2),
-        row.dec.toFixed(2),
-        row.distance.toLocaleString(),
-        row.brightness.toFixed(1),
-        row.source,
-        row.observation_time,
-      ]),
-    ]
-      .map((row) => row.join(","))
-      .join("\n")
+    const csvLines: string[] = []
 
+    datasets.forEach((dataset) => {
+      // Add dataset header
+      csvLines.push(`Dataset: ${dataset.source}`)
+      csvLines.push(`Schema: ${dataset.schemaKey}`)
+      csvLines.push("")
+
+      // Add column headers
+      const headers = dataset.fields.map((f) => getHeaderLabel(f.name, f.unit))
+      csvLines.push(headers.join(","))
+
+      // Add rows
+      dataset.rows.forEach((row) => {
+        const values = dataset.fields.map((f) => getDisplayValue(row, f.name))
+        csvLines.push(values.join(","))
+      })
+
+      csvLines.push("")
+      csvLines.push("")
+    })
+
+    const csvContent = csvLines.join("\n")
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
     const url = URL.createObjectURL(blob)
     link.setAttribute("href", url)
-    link.setAttribute("download", `cosmic_data_export_${new Date().toISOString().split("T")[0]}.csv`)
+    link.setAttribute("download", `cosmic_datasets_export_${new Date().toISOString().split("T")[0]}.csv`)
     link.style.visibility = "hidden"
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
   }
 
-  // Get unique agencies and types from the data
-  const agencyOptions = useMemo(() => {
-    const agencies = new Set(unifiedData.map((d) => d.source))
-    return ["All", ...Array.from(agencies).sort()]
-  }, [unifiedData])
-
-  const typeOptions = useMemo(() => {
-    const types = new Set(unifiedData.map((d) => d.object_type))
-    return ["All", ...Array.from(types).sort()]
-  }, [unifiedData])
+  const totalRows = useMemo(() => {
+    return datasets.reduce((sum, ds) => sum + ds.rows.length, 0)
+  }, [datasets])
 
   return (
     <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
-      <h2 className="text-2xl font-semibold text-slate-900">Unified Astronomical Dataset Repository</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-semibold text-slate-900">Unified Astronomical Dataset Repository</h2>
+        <div className="text-sm text-slate-600">
+          {datasets.length} dataset{datasets.length !== 1 ? "s" : ""} • {totalRows} total objects
+        </div>
+      </div>
 
-      <Card className="p-6 border-slate-200">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div>
-            <label className="text-sm text-slate-700 font-medium block mb-2">Filter by Agency</label>
-            <Select value={selectedAgency} onValueChange={setSelectedAgency}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {agencyOptions.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {datasets.length === 0 ? (
+        <Card className="p-12 border-slate-200 text-center">
+          <p className="text-slate-500">No datasets uploaded yet. Upload a file to get started.</p>
+        </Card>
+      ) : (
+        <div className="space-y-8">
+          {datasets.map((dataset) => (
+            <Card key={dataset.id} className="p-6 border-slate-200">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 mb-1">
+                  Source: {dataset.source}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono">Schema: {dataset.schemaKey}</p>
+                <p className="text-sm text-slate-600 mt-2">
+                  {dataset.rows.length} object{dataset.rows.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      {dataset.fields.map((field) => (
+                        <th
+                          key={field.name}
+                          className="text-left py-3 px-4 text-slate-900 font-semibold"
+                        >
+                          {getHeaderLabel(field.name, field.unit)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dataset.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={dataset.fields.length} className="py-8 text-center text-slate-500">
+                          No data rows
+                        </td>
+                      </tr>
+                    ) : (
+                      dataset.rows.map((row, idx) => (
+                        <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition">
+                          {dataset.fields.map((field) => (
+                            <td key={field.name} className="py-3 px-4 text-slate-600">
+                              {field.name === "object_id" ? (
+                                <span className="font-mono text-slate-800">
+                                  {getDisplayValue(row, field.name)}
+                                </span>
+                              ) : field.name === "source" ? (
+                                <span
+                                  className={`px-2 py-1 rounded text-xs font-semibold ${
+                                    getDisplayValue(row, field.name) === "NASA"
+                                      ? "bg-orange-100 text-orange-800"
+                                      : getDisplayValue(row, field.name) === "ESA"
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-purple-100 text-purple-800"
+                                  }`}
+                                >
+                                  {getDisplayValue(row, field.name)}
+                                </span>
+                              ) : (
+                                getDisplayValue(row, field.name)
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ))}
+
+          <div className="flex justify-end">
+            <Button onClick={handleExport} className="gap-2">
+              <Download className="w-4 h-4" />
+              Export All Datasets (CSV)
+            </Button>
           </div>
-          <div>
-            <label className="text-sm text-slate-700 font-medium block mb-2">Filter by Object Type</label>
-            <Select value={selectedType} onValueChange={setSelectedType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {typeOptions.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-sm text-slate-700 font-medium block mb-2">Search</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input
-                type="text"
-                placeholder="Search objects..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
         </div>
-
-        <div className="mb-4 text-sm text-slate-600">
-          Showing {filteredData.length} of {unifiedData.length} objects
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">Object ID</th>
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">Type</th>
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">RA (°)</th>
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">Dec (°)</th>
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">Distance (km)</th>
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">Brightness</th>
-                <th className="text-left py-3 px-4 text-slate-900 font-semibold">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-500">
-                    No objects found matching your filters
-                  </td>
-                </tr>
-              ) : (
-                filteredData.map((row, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition">
-                    <td className="py-3 px-4 font-mono text-slate-800">{row.object_id}</td>
-                    <td className="py-3 px-4 text-slate-700">{row.object_type}</td>
-                    <td className="py-3 px-4 text-slate-600">{row.ra.toFixed(2)}</td>
-                    <td className="py-3 px-4 text-slate-600">{row.dec.toFixed(2)}</td>
-                    <td className="py-3 px-4 text-slate-600">{row.distance.toLocaleString()}</td>
-                    <td className="py-3 px-4 text-slate-600">{row.brightness.toFixed(1)}</td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${
-                          row.source === "NASA"
-                            ? "bg-orange-100 text-orange-800"
-                            : row.source === "ESA"
-                              ? "bg-blue-100 text-blue-800"
-                              : "bg-purple-100 text-purple-800"
-                        }`}
-                      >
-                        {row.source}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex justify-end mt-6">
-          <Button onClick={handleExport} className="gap-2">
-            <Download className="w-4 h-4" />
-            Export Dataset (CSV)
-          </Button>
-        </div>
-      </Card>
+      )}
     </section>
   )
 }
