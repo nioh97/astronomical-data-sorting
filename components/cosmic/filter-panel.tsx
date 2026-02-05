@@ -654,15 +654,17 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
           {/* Active Filters */}
           {filters.length > 0 && (
             <div className="space-y-2">
-              {filters.map((filter) => {
+              {filters.map((filter, filterIdx) => {
                 const col = meta.columnMeta.find((c) => c.name === filter.column)
                 if (!col) return null
+
+                const scopedKey = `filter-${dataset.id}-${filter.id}-${filterIdx}`
 
                 switch (filter.type) {
                   case "numeric_range":
                     return (
                       <NumericFilterEditor
-                        key={filter.id}
+                        key={scopedKey}
                         filter={filter as NumericRangeFilter}
                         column={col}
                         onUpdate={(updates) => updateFilter(filter.id, updates)}
@@ -672,7 +674,7 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
                   case "categorical":
                     return (
                       <CategoricalFilterEditor
-                        key={filter.id}
+                        key={scopedKey}
                         filter={filter as CategoricalFilter}
                         column={col}
                         onUpdate={(updates) => updateFilter(filter.id, updates)}
@@ -682,7 +684,7 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
                   case "temporal":
                     return (
                       <TemporalFilterEditor
-                        key={filter.id}
+                        key={scopedKey}
                         filter={filter as TemporalFilter}
                         column={col}
                         onUpdate={(updates) => updateFilter(filter.id, updates)}
@@ -693,7 +695,7 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
                   case "spatial_dec":
                     return (
                       <SpatialFilterEditor
-                        key={filter.id}
+                        key={scopedKey}
                         filter={filter as SpatialRAFilter | SpatialDecFilter}
                         column={col}
                         onUpdate={(updates) => updateFilter(filter.id, updates)}

@@ -134,9 +134,9 @@ function DatasetTable({
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50">
               <th className="text-left py-2 px-3 text-slate-500 font-medium w-12">#</th>
-              {dataset.columns.map((column) => (
+              {dataset.columns.map((column, colIdx) => (
                 <th
-                  key={column.name}
+                  key={`col-header-${dataset.id}-${column.name}-${colIdx}`}
                   className="text-left py-2 px-3 text-slate-900 font-semibold"
                 >
                   <div className="flex flex-col gap-1">
@@ -168,21 +168,24 @@ function DatasetTable({
                 </td>
               </tr>
             ) : (
-              displayRows.map((row, idx) => (
-                <tr
-                  key={filterResult.passingIndices[idx] ?? idx}
-                  className="border-b border-slate-100 hover:bg-slate-50 transition"
-                >
-                  <td className="py-2 px-3 text-slate-400 text-xs">
-                    {(filterResult.passingIndices[idx] ?? idx) + 1}
-                  </td>
-                  {dataset.columns.map((column) => (
-                    <td key={column.name} className="py-2 px-3 text-slate-600">
-                      {getDisplayValue(row, column.name, column)}
+              displayRows.map((row, idx) => {
+                const rowKey = filterResult.passingIndices[idx] ?? idx
+                return (
+                  <tr
+                    key={`row-${dataset.id}-${rowKey}`}
+                    className="border-b border-slate-100 hover:bg-slate-50 transition"
+                  >
+                    <td className="py-2 px-3 text-slate-400 text-xs">
+                      {rowKey + 1}
                     </td>
-                  ))}
-                </tr>
-              ))
+                    {dataset.columns.map((column, colIdx) => (
+                      <td key={`cell-${dataset.id}-${rowKey}-${column.name}-${colIdx}`} className="py-2 px-3 text-slate-600">
+                        {getDisplayValue(row, column.name, column)}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -425,9 +428,9 @@ export default function UnifiedRepositorySection() {
         </Card>
       ) : (
         <div className="space-y-6">
-          {datasets.map((dataset) => (
+          {datasets.map((dataset, index) => (
             <DatasetTable
-              key={dataset.id}
+              key={`repo-table-${dataset.id}-${index}`}
               dataset={dataset}
               getDisplayValue={getDisplayValue}
               getHeaderLabel={getHeaderLabel}
