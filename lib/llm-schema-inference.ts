@@ -1,9 +1,10 @@
 /**
- * LLM Schema Inference Module
- * 
- * LLM is used ONLY for semantic understanding - NOT for data transport.
- * Returns small schema definition (<5KB), never full datasets.
+ * LLM Schema Inference Module (fault-tolerant)
+ * safeExtractJSONObject + retry; fallback schema on failure. Never throw.
  */
+
+import { safeExtractJSONObject } from "@/lib/safeExtractJSON"
+import { LLM_SYSTEM_JSON_ONLY, LLM_USER_NO_TEXT_AROUND } from "@/lib/llm-retry"
 
 export interface SchemaInferenceInput {
   filename: string
@@ -37,9 +38,9 @@ async function callOllamaForSchemaInference(input: SchemaInferenceInput): Promis
     const sampleRows = input.sampleRows.slice(0, 15)
 
     // Construct focused prompt for schema inference only
-    const prompt = `You are a scientific data schema inference engine for astronomical measurements.
+    const prompt = `${LLM_SYSTEM_JSON_ONLY}
 
-Your task is to analyze a dataset and infer the semantic meaning of each column. You will return ONLY a schema definition - no row data, no explanations, no markdown.
+Your task is to analyze a dataset and infer the semantic meaning of each column. Return ONLY a schema definition - no row data. ${LLM_USER_NO_TEXT_AROUND}
 
 Dataset Information:
 - Filename: ${input.filename}
@@ -112,86 +113,63 @@ IMPORTANT:
       return null
     }
 
-    const data = await response.json()
-    const responseText = data.response || ""
-
-    // Extract JSON from response (handle markdown code blocks if present)
-    let jsonText = responseText.trim()
-    
-    // Remove markdown code blocks if present
-    const codeBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-    if (codeBlockMatch) {
-      jsonText = codeBlockMatch[1]
-    } else {
-      // Try to extract JSON object
-      const jsonMatch = jsonText.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        jsonText = jsonMatch[0]
-      }
-    }
-
-    let parsed: SchemaInferenceResult
-
-    try {
-      parsed = JSON.parse(jsonText)
-    } catch (e) {
-      console.error("Failed to parse LLM JSON response:", e)
-      if (process.env.NODE_ENV === "development") {
-        console.error("Raw LLM response:", responseText.substring(0, 500))
-      }
+    const data = await response.json().catch(() => ({}))
+    const responseText = (data.response ?? "") as string
+    const parsed = safeExtractJSONObject(responseText) as Record<string, unknown> | null
+    if (!parsed || !Array.isArray(parsed.columns) || parsed.columns.length === 0) {
+      if (typeof console !== "undefined" && console.warn) console.warn("Schema inference: invalid or empty response")
       return null
     }
-
-    // Validate response structure
-    if (
-      !parsed.datasetName ||
-      !Array.isArray(parsed.columns) ||
-      parsed.columns.length === 0
-    ) {
-      console.error("Invalid LLM response structure")
-      return null
+    const datasetName = typeof parsed.datasetName === "string" ? parsed.datasetName : input.filename.replace(/\.[^/.]+$/, "")
+    const validColumns: ColumnSchema[] = []
+    for (const col of parsed.columns as Record<string, unknown>[]) {
+      if (!col || typeof col.sourceField !== "string" || !col.sourceField || typeof col.canonicalName !== "string" || typeof col.description !== "string")
+        continue
+      validColumns.push({
+        sourceField: col.sourceField as string,
+        canonicalName: col.canonicalName as string,
+        unit: (col.unit as string | null) ?? null,
+        targetUnit: (col.targetUnit as string | null) ?? null,
+        description: col.description as string,
+        conversionRule: col.conversionRule as string | undefined,
+      })
     }
-
-    // Validate columns structure
-    for (const col of parsed.columns) {
-      if (!col.sourceField || !col.canonicalName || typeof col.description !== "string") {
-        console.error("Invalid column structure:", col)
-        return null
-      }
-    }
-
-    return parsed
+    if (validColumns.length === 0) return null
+    return { datasetName, columns: validColumns }
   } catch (error) {
-    console.error("Error calling Ollama for schema inference:", error)
+    if (typeof console !== "undefined" && console.warn) console.warn("Schema inference error:", error)
     return null
   }
 }
 
+function buildFallbackSchema(input: SchemaInferenceInput): SchemaInferenceResult {
+  const datasetName = input.filename.replace(/\.[^/.]+$/, "")
+  const columns: ColumnSchema[] = (input.headers || []).map((name) => ({
+    sourceField: name,
+    canonicalName: name,
+    unit: null,
+    targetUnit: null,
+    description: `Fallback: ${name}`,
+  }))
+  return { datasetName, columns }
+}
+
 /**
- * Main schema inference function
- * Returns schema definition only - no row data
+ * Main schema inference. Retry once on failure; then fallback schema. Never throw.
  */
 export async function inferDatasetSchemaWithLLM(
   input: SchemaInferenceInput
 ): Promise<SchemaInferenceResult> {
-  // Call LLM for schema inference
-  const result = await callOllamaForSchemaInference(input)
-
-  if (!result) {
-    // Retry once with fewer sample rows if first attempt fails
-    if (input.sampleRows.length > 5) {
-      console.warn("Retrying schema inference with fewer sample rows...")
-      const retryResult = await callOllamaForSchemaInference({
-        ...input,
-        sampleRows: input.sampleRows.slice(0, 5),
-      })
-      if (retryResult) {
-        return retryResult
-      }
-    }
-    throw new Error("LLM schema inference failed. Please ensure Ollama is running and the model is available.")
+  let result = await callOllamaForSchemaInference(input)
+  if (!result && input.sampleRows.length > 5) {
+    if (typeof console !== "undefined" && console.warn) console.warn("Schema inference: retrying with fewer rows")
+    result = await callOllamaForSchemaInference({ ...input, sampleRows: input.sampleRows.slice(0, 5) })
   }
-
+  if (!result) {
+    if (typeof console !== "undefined" && console.warn) console.warn("Schema inference: using fallback schema")
+    return buildFallbackSchema(input)
+  }
   return result
 }
+
 

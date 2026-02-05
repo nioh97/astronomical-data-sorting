@@ -1,11 +1,10 @@
 /**
- * LLM Analysis Module
- * 
- * LLM is used ONLY for semantic understanding and unit detection.
- * NO unit conversion is performed here - user selects final units.
+ * LLM Analysis Module (fault-tolerant)
+ * LLM for semantic understanding and unit detection only. safeExtractJSONObject + retry; never throw.
  */
 
-import { safeParseJSON } from "@/lib/llm-json"
+import { safeExtractJSONObject } from "@/lib/safeExtractJSON"
+import { LLM_SYSTEM_JSON_ONLY, LLM_USER_NO_TEXT_AROUND } from "@/lib/llm-retry"
 
 export interface LLMIngestionInput {
   filename: string
@@ -61,9 +60,9 @@ async function callOllamaForAnalysis(input: LLMIngestionInput): Promise<LLMAnaly
     const model = process.env.NEXT_PUBLIC_LLM_MODEL || "qwen2.5:3b"
 
     // Construct prompt for semantic analysis only (NO conversion)
-    const prompt = `You are a scientific data analysis engine for astronomical measurements.
+    const prompt = `${LLM_SYSTEM_JSON_ONLY}
 
-Your task is to analyze a dataset and infer the semantic meaning of each column, detect units, and recommend final units. You will return field analysis and raw rows - NO unit conversion will be performed.
+Your task is to analyze a dataset and infer the semantic meaning of each column, detect units, and recommend final units. Return field analysis and raw rows - NO unit conversion. ${LLM_USER_NO_TEXT_AROUND}
 
 Dataset Information:
 - Filename: ${llmInput.filename}
@@ -167,93 +166,84 @@ IMPORTANT:
       return null
     }
 
-    const data = await response.json()
-    const responseText = data.response || ""
-
-    // Safely extract and parse JSON (returns null on failure, no exception)
-    const parsed = safeParseJSON<{
-      datasetName: string
-      fields: FieldAnalysis[]
-      rows?: Record<string, any>[] // LLM may return rows, but we'll use all parsed rows
-    }>(responseText, "LLM Analysis JSON")
-
-    if (!parsed) {
-      console.error("Failed to parse LLM JSON response")
+    const data = await response.json().catch(() => ({}))
+    const responseText = (data.response ?? "") as string
+    const parsed = safeExtractJSONObject(responseText) as Record<string, unknown> | null
+    if (!parsed || !Array.isArray(parsed.fields) || parsed.fields.length === 0) {
+      if (typeof console !== "undefined" && console.warn) console.warn("LLM ingestion: invalid or empty response")
       return null
     }
-
-    // Validate response structure
-    if (
-      !parsed.datasetName ||
-      !Array.isArray(parsed.fields) ||
-      parsed.fields.length === 0
-    ) {
-      console.error("Invalid LLM response structure")
-      return null
+    if (!parsed.datasetName || typeof parsed.datasetName !== "string") {
+      parsed.datasetName = input.filename.replace(/\.[^/.]+$/, "")
     }
 
-    // Validate fields structure
-    for (const field of parsed.fields) {
+    const validFields: FieldAnalysis[] = []
+    for (const field of parsed.fields as Record<string, unknown>[]) {
       if (
+        !field ||
+        typeof field.fieldName !== "string" ||
         !field.fieldName ||
-        !field.semanticType ||
+        typeof field.semanticType !== "string" ||
         !Array.isArray(field.suggestedUnits) ||
-        typeof field.confidence !== "number" ||
-        field.confidence < 0 ||
-        field.confidence > 1 ||
+        (typeof field.confidence !== "number") || (field.confidence < 0 || field.confidence > 1) ||
         typeof field.reasoning !== "string"
-      ) {
-        console.error("Invalid field structure:", field)
-        return null
-      }
-      
-      // Validate recommendedUnit is in suggestedUnits or null
-      if (
-        field.recommendedUnit !== null &&
-        !field.suggestedUnits.includes(field.recommendedUnit)
-      ) {
-        console.warn(`Recommended unit ${field.recommendedUnit} not in suggestedUnits, setting to null`)
-        field.recommendedUnit = null
-      }
+      ) continue
+      let recommendedUnit = field.recommendedUnit as string | null
+      const suggestedUnits = field.suggestedUnits as string[]
+      if (recommendedUnit != null && !suggestedUnits.includes(recommendedUnit)) recommendedUnit = null
+      validFields.push({
+        fieldName: field.fieldName as string,
+        semanticType: field.semanticType as string,
+        detectedUnit: (field.detectedUnit as string | null) ?? null,
+        suggestedUnits,
+        recommendedUnit,
+        confidence: field.confidence as number,
+        reasoning: field.reasoning as string,
+        description: (field.description as string) ?? "",
+      })
     }
-
-    // Return analysis with ALL original rows (not just samples from LLM)
-    // We use all parsed rows from the file parser, not the LLM's sample rows
+    if (validFields.length === 0) return null
     return {
-      datasetName: parsed.datasetName,
-      fields: parsed.fields,
-      rawRows: input.parsedPreview.sampleRows, // Return all parsed rows from file parser
+      datasetName: String(parsed.datasetName),
+      fields: validFields,
+      rawRows: input.parsedPreview.sampleRows,
     }
   } catch (error) {
-    console.error("Error calling Ollama for analysis:", error)
+    if (typeof console !== "undefined" && console.warn) console.warn("LLM ingestion error:", error)
     return null
   }
 }
 
+function buildFallbackAnalysisResult(input: LLMIngestionInput): LLMAnalysisResult {
+  const datasetName = input.filename.replace(/\.[^/.]+$/, "")
+  const fields: FieldAnalysis[] = (input.parsedPreview.headers || []).map((name) => ({
+    fieldName: name,
+    semanticType: "other",
+    detectedUnit: null,
+    suggestedUnits: [],
+    recommendedUnit: null,
+    confidence: 0,
+    reasoning: "Fallback: dimensionless (LLM unavailable)",
+    description: name,
+  }))
+  return { datasetName, fields, rawRows: input.parsedPreview.sampleRows || [] }
+}
+
 /**
- * Main analysis function - returns field analysis and raw rows
- * NO conversion is performed
+ * Main analysis function. Retry once on failure; then fallback schema. Never throw.
  */
 export async function analyzeDatasetWithLLM(input: LLMIngestionInput): Promise<LLMAnalysisResult> {
-  const result = await callOllamaForAnalysis(input)
-
-  if (!result) {
-    // Retry once with fewer sample rows if first attempt fails
-    if (input.parsedPreview.sampleRows.length > 5) {
-      console.warn("Retrying analysis with fewer sample rows...")
-      const retryResult = await callOllamaForAnalysis({
-        ...input,
-        parsedPreview: {
-          ...input.parsedPreview,
-          sampleRows: input.parsedPreview.sampleRows.slice(0, 5),
-        },
-      })
-      if (retryResult) {
-        return retryResult
-      }
-    }
-    throw new Error("LLM analysis failed. Please ensure Ollama is running and the model is available.")
+  let result = await callOllamaForAnalysis(input)
+  if (!result && input.parsedPreview.sampleRows.length > 5) {
+    if (typeof console !== "undefined" && console.warn) console.warn("LLM ingestion: retrying with fewer rows")
+    result = await callOllamaForAnalysis({
+      ...input,
+      parsedPreview: { ...input.parsedPreview, sampleRows: input.parsedPreview.sampleRows.slice(0, 5) },
+    })
   }
-
+  if (!result) {
+    if (typeof console !== "undefined" && console.warn) console.warn("LLM ingestion: using fallback schema")
+    return buildFallbackAnalysisResult(input)
+  }
   return result
 }

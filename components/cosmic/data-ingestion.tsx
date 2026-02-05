@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -8,11 +8,125 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { parseFile } from "@/lib/file-parsers"
+import { useToast } from "@/hooks/use-toast"
+import { parseFile, type ColumnMetadataEntry } from "@/lib/file-parsers"
 import { useDataContext, Dataset } from "@/lib/data-context"
 import { analyzeFieldsWithLLM, FieldAnalysisResult } from "@/lib/field-analysis"
-import { convertDatasetWithLLM } from "@/lib/llm-conversion"
+import {
+  analyzeNASAFieldsWithLLM,
+  buildNASAFieldAnalysisInput,
+  UNIT_REGISTRY,
+  type NASAFieldAnalysisFieldOutput,
+} from "@/lib/llm-field-analysis"
+import {
+  type ConversionSpec,
+  type ConversionFieldGuard,
+  convertDatasetWithLLM,
+} from "@/lib/llm-conversion"
+import { normalizeUnit } from "@/lib/unit-normalization"
+import { UNIT_TAXONOMY } from "@/lib/units/unitTaxonomy"
 import { UnitSelectionDialog } from "./unit-selection-dialog"
+import type { FITSResult } from "@/lib/fits/fits-types"
+import { useAppUI } from "@/lib/app-ui-context"
+
+const FITS_EXTENSIONS = [".fits", ".fit", ".fz"]
+
+function isFitsFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  return FITS_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+/** Default fromUnit by physicalQuantity when no detected unit (e.g. NASA metadata). */
+function defaultFromUnit(pq: string | undefined): string {
+  const k = pq?.toLowerCase()
+  switch (k) {
+    case "time":
+      return "day"
+    case "length":
+    case "distance":
+      return "au"
+    case "angle":
+      return "deg"
+    case "mass":
+      return "kg"
+    case "temperature":
+      return "K"
+    case "brightness":
+      return "mag"
+    case "acceleration":
+      return "cm/s^2"
+    default:
+      return ""
+  }
+}
+
+/** Build conversion specs with normalized units (for Qwen and factor lookup). Logarithmic/categorical fields are never included. */
+function buildConversionSpecs(
+  fieldAnalysis: FieldAnalysisResult[],
+  selectedUnits: Record<string, string | null>,
+  columnMetadata?: Record<string, ColumnMetadataEntry>
+): ConversionSpec[] {
+  console.log("🔨 Building conversion specs...")
+  const specs: ConversionSpec[] = []
+  for (const f of fieldAnalysis) {
+    const fieldName = f.field_name
+    // Skip non-linear encodings
+    if (f.encoding === "logarithmic" || f.encoding === "sexagesimal" || f.encoding === "categorical" || f.encoding === "identifier") {
+      console.log(`  ⏭️ ${fieldName}: SKIP (encoding=${f.encoding})`)
+      continue
+    }
+    // Skip count/dimensionless
+    if (f.physicalQuantity === "count" || f.physicalQuantity === "dimensionless") {
+      console.log(`  ⏭️ ${fieldName}: SKIP (pq=${f.physicalQuantity})`)
+      continue
+    }
+    // Get target unit
+    const rawTo = selectedUnits[fieldName] ?? f.finalUnit
+    if (rawTo == null || String(rawTo).trim() === "") {
+      console.log(`  ⏭️ ${fieldName}: SKIP (no toUnit, rawTo=${rawTo})`)
+      continue
+    }
+    const toUnit = normalizeUnit(String(rawTo).trim())
+    // Get source unit
+    const rawFrom = columnMetadata?.[fieldName]?.detectedUnit ?? defaultFromUnit(f.physicalQuantity)
+    if (!rawFrom) {
+      console.log(`  ⏭️ ${fieldName}: SKIP (no fromUnit, rawFrom=${rawFrom})`)
+      continue
+    }
+    const fromUnit = normalizeUnit(String(rawFrom).trim())
+    // Skip if same unit (no conversion needed)
+    if (fromUnit === toUnit) {
+      console.log(`  ⏭️ ${fieldName}: SKIP (fromUnit===toUnit: ${fromUnit})`)
+      continue
+    }
+    console.log(`  ✅ ${fieldName}: ${fromUnit} → ${toUnit}`)
+    specs.push({
+      field: fieldName,
+      physicalQuantity: f.physicalQuantity ?? "dimensionless",
+      fromUnit,
+      toUnit,
+      encoding: (f.encoding ?? "linear") as "linear" | "logarithmic" | "sexagesimal" | "categorical" | "identifier",
+    })
+  }
+  console.log(`🔨 Built ${specs.length} conversion specs`)
+  return specs
+}
+
+function mapNASAFieldsToAnalysisResult(
+  nasaFields: NASAFieldAnalysisFieldOutput[]
+): FieldAnalysisResult[] {
+  return nasaFields.map((f) => ({
+    field_name: f.name,
+    semantic_type: f.semanticType,
+    unit_required: "unitRequired" in f && typeof f.unitRequired === "boolean" ? f.unitRequired : f.physicalQuantity !== "dimensionless",
+    allowed_units: Array.isArray(f.suggestedUnits) ? f.suggestedUnits : [],
+    recommended_unit: f.recommendedUnit ?? null,
+    reason: f.physicalQuantity !== "dimensionless" ? `Physical quantity: ${f.physicalQuantity}` : "Dimensionless",
+    physicalQuantity: f.physicalQuantity,
+    timeKind: f.timeKind,
+    encoding: f.encoding,
+  }))
+}
 
 interface IngestedDataset {
   name: string
@@ -22,6 +136,8 @@ interface IngestedDataset {
 
 export default function DataIngestionSection() {
   const { addDataset } = useDataContext()
+  const { toast } = useToast()
+  const appUI = useAppUI()
   const [ingestedDatasets, setIngestedDatasets] = useState<IngestedDataset[]>([])
   const [uploading, setUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -35,48 +151,284 @@ export default function DataIngestionSection() {
     parsedData: { headers: string[]; rows: Record<string, any>[]; metadata?: Record<string, any> }
     filename: string
     fileType: "csv" | "json" | "xml"
+    columnMetadata?: Record<string, ColumnMetadataEntry>
   } | null>(null)
+  const [analysisUsedFallback, setAnalysisUsedFallback] = useState(false)
+  const cancelRef = useRef(false)
+  const [fitsResults, setFitsResults] = useState<FITSResult[]>([])
+
+  // UX4G: report mode/stage/file to status bar (UI-only, no logic change)
+  useEffect(() => {
+    if (unitDialogOpen) {
+      appUI.setMode("awaiting_units")
+      appUI.setCurrentStage("units")
+      if (pendingAnalysis) {
+        appUI.setFileName(pendingAnalysis.filename)
+        appUI.setFileType(pendingAnalysis.fileType.toUpperCase() as "CSV" | "JSON" | "XML")
+        appUI.setDatasetSize(`${pendingAnalysis.parsedData.rows.length} rows, ${pendingAnalysis.parsedData.headers.length} columns`)
+      }
+      return
+    }
+    if (uploading || isProcessing) {
+      if (processingStep.toLowerCase().includes("convert")) {
+        appUI.setMode("converting")
+        appUI.setCurrentStage("convert")
+      } else if (processingStep.toLowerCase().includes("analyz") || processingStep.toLowerCase().includes("pars")) {
+        appUI.setMode(uploading ? "uploading" : "analyzing")
+        appUI.setCurrentStage(uploading ? "upload" : "analyze")
+      } else {
+        appUI.setMode(uploading ? "uploading" : "analyzing")
+        appUI.setCurrentStage("upload")
+      }
+      return
+    }
+    if (uploadSuccess || ingestedDatasets.length > 0 || fitsResults.length > 0) {
+      appUI.setMode("ready")
+      appUI.setCurrentStage("repository")
+      if (fitsResults.length > 0) {
+        appUI.setFileName(fitsResults[0]?.fileName ?? "")
+        appUI.setFileType("FITS")
+        appUI.setDatasetSize(`${fitsResults.reduce((n, r) => n + r.hdus.length, 0)} HDUs`)
+      } else if (ingestedDatasets.length > 0) {
+        appUI.setFileName(ingestedDatasets[0]?.name ?? "")
+        appUI.setFileType("CSV")
+        appUI.setDatasetSize(`${ingestedDatasets.length} dataset(s)`)
+      }
+      return
+    }
+    appUI.setMode("idle")
+    appUI.setCurrentStage("upload")
+    appUI.setFileName("")
+    appUI.setFileType(null)
+    appUI.setDatasetSize("")
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- appUI setters are stable; only sync when pipeline state changes
+  }, [uploading, isProcessing, processingStep, unitDialogOpen, pendingAnalysis, uploadSuccess, ingestedDatasets, fitsResults])
 
   const handleDeleteDataset = (index: number) => {
     setIngestedDatasets((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const handleRemoveFitsResult = (index: number) => {
+    setFitsResults((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const handleUnitSelectionConfirm = async (selectedUnits: Record<string, string | null>) => {
     if (!pendingAnalysis) return
 
+    // Show warning if fallback was used BUT DO NOT BLOCK - user can still select units and convert
+    if (analysisUsedFallback) {
+      toast({
+        title: "Using fallback field classification",
+        description: "Field analysis used fallback schema. Please verify unit selections.",
+        variant: "default",
+      })
+      // DO NOT return - allow conversion to proceed with user-selected units
+    }
+
+    // Validate: required fields must have a unit (unless count, dimensionless, logarithmic, sexagesimal, identifier)
+    const missing = pendingAnalysis.fieldAnalysis.some(
+      (f) =>
+        f.unit_required &&
+        !(selectedUnits[f.field_name] ?? f.finalUnit) &&
+        !["count", "dimensionless"].includes(f.physicalQuantity ?? "") &&
+        f.encoding !== "logarithmic" &&
+        f.encoding !== "sexagesimal" &&
+        f.encoding !== "identifier"
+    )
+    if (missing) {
+      toast({
+        title: "Please confirm all required units",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsProcessing(true)
-    setProcessingStep("Converting dataset with AI…")
-    setProcessingProgress(60)
+    setProcessingStep("Normalizing units…")
+    setProcessingProgress(10)
+    cancelRef.current = false
+
+    // ==================== HARD DEBUG LOGGING ====================
+    console.group("🔄 CONVERSION PIPELINE START")
+    console.time("UNIT_CONVERSION_TOTAL")
+    console.log("📋 UnitSelectionMap:", JSON.stringify(selectedUnits, null, 2))
+    // ============================================================
 
     try {
-      const { fieldAnalysis, parsedData, filename, fileType } = pendingAnalysis
+      const { parsedData, filename } = pendingAnalysis
+      const { fieldAnalysis, columnMetadata } = pendingAnalysis
 
-      // STAGE 2: Convert dataset using qwen-2.5-3b
-      setProcessingStep("Converting units and values…")
-      setProcessingProgress(70)
-      const conversionResult = await convertDatasetWithLLM({
-        filename,
-        fileType,
-        headers: parsedData.headers,
-        rows: parsedData.rows, // Full dataset
+      // DEBUG: Log field analysis
+      console.log("📊 Field Analysis:", fieldAnalysis.map(f => ({
+        name: f.field_name,
+        pq: f.physicalQuantity,
+        unitRequired: f.unit_required,
+        encoding: f.encoding,
+        recommended: f.recommended_unit,
+        finalUnit: f.finalUnit,
+      })))
+
+      const conversionSpecs = buildConversionSpecs(
         fieldAnalysis,
         selectedUnits,
-      })
+        columnMetadata
+      )
 
-      // STAGE 3: Create Dataset Object
-      setProcessingStep("Storing dataset…")
-      setProcessingProgress(80)
+      // DEBUG: Log conversion specs
+      console.log("🔧 ConversionSpecs:", conversionSpecs.map(s => ({
+        field: s.field,
+        from: s.fromUnit,
+        to: s.toUnit,
+        pq: s.physicalQuantity,
+      })))
+
+      // Check if any fields REQUIRE conversion but couldn't be converted
+      // (i.e., unit_required is true, linear encoding, different source/target, but no spec built)
+      const linearConvertibleFields = fieldAnalysis.filter(
+        (f) => f.encoding !== "logarithmic" && 
+               f.encoding !== "sexagesimal" && 
+               f.encoding !== "categorical" && 
+               f.encoding !== "identifier" &&
+               f.physicalQuantity !== "count" &&
+               f.physicalQuantity !== "dimensionless" &&
+               f.unit_required
+      )
+      
+      // Only block if there are fields that need conversion AND we couldn't build specs for them
+      // AND the reason is not "same unit" (fromUnit === toUnit is fine)
+      const fieldsNeedingConversionButMissing = linearConvertibleFields.filter((f) => {
+        const rawTo = selectedUnits[f.field_name] ?? f.finalUnit
+        const rawFrom = columnMetadata?.[f.field_name]?.detectedUnit ?? defaultFromUnit(f.physicalQuantity)
+        
+        // If no target unit selected, that's a problem
+        if (!rawTo || String(rawTo).trim() === "") {
+          console.log(`  ⚠️ ${f.field_name}: No target unit selected`)
+          return true
+        }
+        
+        // If no source unit detected, warn but don't block
+        if (!rawFrom || String(rawFrom).trim() === "") {
+          console.log(`  ⚠️ ${f.field_name}: No source unit detected (will use raw values)`)
+          return false // Don't block - just use raw values
+        }
+        
+        // If same unit, no conversion needed - that's fine
+        const fromNorm = normalizeUnit(String(rawFrom).trim())
+        const toNorm = normalizeUnit(String(rawTo).trim())
+        if (fromNorm === toNorm) {
+          console.log(`  ✓ ${f.field_name}: Same unit (${fromNorm}), no conversion needed`)
+          return false // Not missing - just no conversion needed
+        }
+        
+        // Check if spec was created
+        const hasSpec = conversionSpecs.some(s => s.field === f.field_name)
+        if (!hasSpec) {
+          console.log(`  ❌ ${f.field_name}: Needs conversion ${fromNorm} → ${toNorm} but no spec created`)
+          return true
+        }
+        
+        return false
+      })
+      
+      if (fieldsNeedingConversionButMissing.length > 0) {
+        const fieldNames = fieldsNeedingConversionButMissing.map(f => f.field_name).join(", ")
+        throw new Error(`Cannot convert fields: ${fieldNames}. Please select valid target units.`)
+      }
+      
+      // If no specs but that's because all fields are same-unit or non-convertible, that's OK
+      if (conversionSpecs.length === 0) {
+        console.log("📋 No conversions needed - all fields have matching units or are non-convertible")
+      }
+
+      setProcessingStep("Normalizing units ✔")
+      setProcessingProgress(15)
+
+      const fieldsForGuard: ConversionFieldGuard[] = fieldAnalysis.map((f) => ({
+        name: f.field_name,
+        unitRequired: f.unit_required,
+        finalUnit: normalizeUnit(String((selectedUnits[f.field_name] ?? f.finalUnit) ?? "").trim()) || null,
+        physicalQuantity: f.physicalQuantity,
+        timeKind: f.timeKind,
+        encoding: f.encoding as "linear" | "logarithmic" | "sexagesimal" | "categorical" | "identifier" | undefined,
+      }))
+
+      let rowsToStore: Record<string, number | string | null>[]
+      let columns: { name: string; semanticType: string; unit: string | null; description: string }[]
+      const datasetName = filename.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_")
+
+      if (conversionSpecs.length > 0) {
+        setProcessingStep("Converting…")
+        const converted = await convertDatasetWithLLM({
+          filename,
+          headers: parsedData.headers,
+          rows: parsedData.rows,
+          conversionSpecs,
+          fields: fieldsForGuard,
+          onChunkProgress: (chunkIndex, totalChunks) => {
+            setProcessingStep(`Converting chunk ${chunkIndex + 1} / ${totalChunks} 🔄`)
+            setProcessingProgress(20 + Math.round((50 * (chunkIndex + 1)) / totalChunks))
+          },
+          getCancelRef: () => cancelRef.current,
+        })
+
+        if (!converted || converted.rows.length === 0) {
+          throw new Error("Conversion did not produce output")
+        }
+
+        setProcessingStep("Validating conversions ✔")
+        setProcessingProgress(75)
+        rowsToStore = converted.rows
+        columns = converted.columns
+      } else {
+        rowsToStore = parsedData.rows as Record<string, number | string | null>[]
+        columns = parsedData.headers.map((name) => {
+          const f = fieldAnalysis.find((x) => x.field_name === name)
+          const unit = selectedUnits[name] ?? f?.finalUnit ?? f?.recommended_unit ?? null
+          return {
+            name,
+            semanticType: f?.physicalQuantity ?? "",
+            unit,
+            description: f?.physicalQuantity ?? "",
+          }
+        })
+      }
+
+      // ==================== CONVERSION RESULTS DEBUG ====================
+      console.log("📥 BEFORE conversion (row 0):", JSON.stringify(parsedData.rows[0], null, 2))
+      console.log("📤 AFTER conversion (row 0):", JSON.stringify(rowsToStore[0], null, 2))
+      
+      // Log per-field comparison
+      console.log("🔬 Per-field conversion comparison:")
+      for (const spec of conversionSpecs) {
+        const before = parsedData.rows[0]?.[spec.field]
+        const after = rowsToStore[0]?.[spec.field]
+        const changed = before !== after
+        console.log(`  ${spec.field}: ${before} → ${after} (${spec.fromUnit} → ${spec.toUnit}) [${changed ? "✅ CHANGED" : "⚠️ UNCHANGED"}]`)
+      }
+      
+      console.timeEnd("UNIT_CONVERSION_TOTAL")
+      console.table({
+        usedFallback: analysisUsedFallback,
+        fieldsConverted: conversionSpecs.length,
+        ingestionBlocked: false,
+        rowCount: rowsToStore.length,
+      })
+      console.groupEnd()
+      // ==================================================================
+
+      setProcessingStep("Ingesting ✔")
+      setProcessingProgress(90)
+      console.log("💾 Saving rows count:", rowsToStore.length)
+
       const dataset: Dataset = {
         id: `dataset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        name: conversionResult.datasetName,
-        columns: conversionResult.columns,
-        rows: conversionResult.rows,
+        name: datasetName,
+        columns,
+        rows: rowsToStore,
         sourceFile: filename,
         createdAt: new Date().toISOString(),
       }
 
-      // STAGE 4: Add to repository
-      setProcessingProgress(90)
       addDataset(dataset)
 
       // Create ingestion record
@@ -95,8 +447,26 @@ export default function DataIngestionSection() {
       setPendingAnalysis(null)
       setUnitDialogOpen(false)
     } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "Failed to convert and store dataset")
+      const message = error instanceof Error ? error.message : "Failed to convert and store dataset"
+      setUploadError(message)
       setProcessingProgress(0)
+      // ==================== ERROR DEBUG ====================
+      console.error("❌ CONVERSION FAILED:", message)
+      console.error("Full error:", error)
+      console.table({
+        usedFallback: analysisUsedFallback,
+        fieldsConverted: 0,
+        ingestionBlocked: true,
+        errorMessage: message,
+      })
+      console.groupEnd()
+      // =====================================================
+      toast({
+        title: "Conversion failed",
+        description: message,
+        variant: "destructive",
+      })
+      // Do NOT close modal on failure — user can fix and retry
     } finally {
       setIsProcessing(false)
       setProcessingStep("")
@@ -107,6 +477,7 @@ export default function DataIngestionSection() {
   const handleUnitSelectionCancel = () => {
     setPendingAnalysis(null)
     setUnitDialogOpen(false)
+    setAnalysisUsedFallback(false)
     setUploadError("Dataset ingestion cancelled by user")
   }
 
@@ -122,7 +493,51 @@ export default function DataIngestionSection() {
     setProcessingProgress(0)
 
     try {
-      // STAGE 1: Parse the file
+      // FITS path — isolated; no parseFile, no LLM, no unit dialog, no repository
+      if (isFitsFile(file.name)) {
+        setProcessingStep("Processing FITS file…")
+        setProcessingProgress(20)
+        const formData = new FormData()
+        formData.append("file", file)
+        const res = await fetch("/api/fits", { method: "POST", body: formData })
+        const data = await res.json().catch(() => ({}))
+        setUploading(false)
+        setIsProcessing(false)
+        setProcessingStep("")
+        event.target.value = ""
+        if (!res.ok) {
+          // Only show "corrupted" when open failed or no numeric HDU; never for visualization/header issues
+          const raw = data?.error ?? ""
+          const isOpenOrNoNumeric =
+            /cannot be opened|astropy|not installed|No numeric|no numeric HDU/i.test(raw)
+          const message = isOpenOrNoNumeric
+            ? raw || "This FITS file could not be opened or contains no numeric data."
+            : raw || "This FITS file could not be processed."
+          setUploadError(message)
+          setProcessingProgress(0)
+          toast({
+            title: "FITS ingestion failed",
+            description: message || "This FITS file could not be processed.",
+            variant: "destructive",
+          })
+          return
+        }
+        setFitsResults((prev) => [{ ...data, status: data.status ?? "success", fileName: data.fileName ?? file.name, hdus: data.hdus ?? [] } as FITSResult, ...prev])
+        if (data.status === "valid_no_visualizable_data") {
+          toast({
+            title: "FITS file valid",
+            description: data.message ?? "This FITS file is valid but contains no visualizable data products.",
+            variant: "default",
+          })
+        } else {
+          setUploadSuccess(true)
+          setTimeout(() => setUploadSuccess(false), 3000)
+        }
+        setTimeout(() => setProcessingProgress(0), 2000)
+        return
+      }
+
+      // STAGE 1: Parse the file (CSV/JSON/XML only)
       setProcessingStep("Parsing file…")
       setProcessingProgress(10)
       const parsedData = await parseFile(file)
@@ -130,9 +545,6 @@ export default function DataIngestionSection() {
       if (parsedData.rows.length === 0) {
         throw new Error("File contains no data rows")
       }
-
-      // Extract sample rows for LLM (10-15 rows)
-      const sampleRows = parsedData.rows.slice(0, 15)
 
       // Determine file type
       const fileExtension = file.name.split(".").pop()?.toLowerCase() || ""
@@ -152,28 +564,103 @@ export default function DataIngestionSection() {
         reader.readAsText(file)
       })
 
-      // STAGE 1: Field & Metadata Analysis (llama-3.1-8b ONLY)
+      // Phase A: Column discovery is local (headers from parser; NASA # lines ignored in file-parsers).
+      // Phase B: Field semantics (NASA: batched max 4; standard: single call). Retry + fallback; never throw.
+      cancelRef.current = false
+      setAnalysisUsedFallback(false)
       setProcessingStep("Analyzing fields with AI…")
       setProcessingProgress(30)
-      const fieldAnalysisResult = await analyzeFieldsWithLLM({
-        filename: file.name,
-        fileType,
-        headers: parsedData.headers,
-        sampleRows: parsedData.rows.slice(0, 5), // First 5 rows only
-        metadata: parsedData.metadata,
+      let fieldAnalysisResult: {
+        fields: FieldAnalysisResult[]
+        usedFallback?: boolean
+        analysisSource?: "llm" | "fallback"
+      }
+      if (parsedData.columnMetadata && Object.keys(parsedData.columnMetadata).length > 0) {
+        setProcessingStep("Analyzing field semantics (batched)…")
+        const nasaInput = buildNASAFieldAnalysisInput(
+          file.name,
+          parsedData.headers,
+          parsedData.rows.slice(0, 3),
+          parsedData.columnMetadata
+        )
+        const nasaOutput = await analyzeNASAFieldsWithLLM(nasaInput)
+        if (cancelRef.current) {
+          setUploading(false)
+          setIsProcessing(false)
+          setProcessingStep("")
+          event.target.value = ""
+          return
+        }
+        if (nasaOutput.fields.length > 0) {
+          fieldAnalysisResult = {
+            fields: mapNASAFieldsToAnalysisResult(nasaOutput.fields),
+            usedFallback: nasaOutput.usedFallback,
+            analysisSource: nasaOutput.analysisSource,
+          }
+        } else {
+          const fallback = await analyzeFieldsWithLLM({
+            filename: file.name,
+            fileType,
+            headers: parsedData.headers,
+            sampleRows: parsedData.rows.slice(0, 3),
+            metadata: parsedData.metadata,
+          })
+          fieldAnalysisResult = { fields: fallback.fields, usedFallback: fallback.usedFallback }
+        }
+      } else {
+        const result = await analyzeFieldsWithLLM({
+          filename: file.name,
+          fileType,
+          headers: parsedData.headers,
+          sampleRows: parsedData.rows.slice(0, 3),
+          metadata: parsedData.metadata,
+        })
+        if (cancelRef.current) {
+          setUploading(false)
+          setIsProcessing(false)
+          setProcessingStep("")
+          event.target.value = ""
+          return
+        }
+        fieldAnalysisResult = { fields: result.fields, usedFallback: result.usedFallback }
+      }
+      setAnalysisUsedFallback(
+        fieldAnalysisResult.analysisSource === "fallback" || !!fieldAnalysisResult.usedFallback
+      )
+
+      // Auto-populate allowed_units from canonical taxonomy; set finalUnit from recommended_unit
+      const enrichedFields = fieldAnalysisResult.fields.map((f) => {
+        if (f.physicalQuantity === "time" && f.timeKind === "calendar") {
+          return {
+            ...f,
+            unit_required: false,
+            allowed_units: [],
+            finalUnit: "ISO_DATE",
+          }
+        }
+        const allowed_units = UNIT_REGISTRY[f.physicalQuantity ?? ""]?.length
+          ? UNIT_REGISTRY[f.physicalQuantity ?? ""]
+          : (UNIT_TAXONOMY[f.physicalQuantity ?? ""] ?? [])
+        return {
+          ...f,
+          allowed_units,
+          finalUnit:
+            f.unit_required && f.recommended_unit ? f.recommended_unit : (f.finalUnit ?? null),
+        }
       })
 
       // Show unit selection dialog (blocking modal)
       setProcessingProgress(50)
       setPendingAnalysis({
-        fieldAnalysis: fieldAnalysisResult.fields,
+        fieldAnalysis: enrichedFields,
         parsedData: {
           headers: parsedData.headers,
-          rows: parsedData.rows, // Full dataset for Stage 2
+          rows: parsedData.rows,
           metadata: parsedData.metadata,
         },
         filename: file.name,
         fileType,
+        columnMetadata: parsedData.columnMetadata,
       })
       setUnitDialogOpen(true)
       setUploading(false)
@@ -182,12 +669,14 @@ export default function DataIngestionSection() {
       event.target.value = ""
       return
     } catch (error) {
-      // Error safety: do NOT ingest partial data
-      setUploadError(error instanceof Error ? error.message : "Failed to process file")
+      setUploadError("Ingestion failed — retry")
       setProcessingProgress(0)
-      if (process.env.NODE_ENV === "development") {
-        console.error("Ingestion error:", error)
-      }
+      if (typeof console !== "undefined" && console.warn) console.warn("Ingestion error:", error)
+      toast({
+        title: "Ingestion failed — retry",
+        description: error instanceof Error ? error.message : "Processing failed",
+        variant: "destructive",
+      })
     } finally {
       setUploading(false)
       setIsProcessing(false)
@@ -200,15 +689,16 @@ export default function DataIngestionSection() {
   }
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm hover:shadow-md transition-all duration-500 relative overflow-hidden group hover:scale-[1.01]">
-      <div className="absolute inset-0 border border-transparent group-hover:border-slate-300/50 rounded-lg transition-all duration-300"></div>
-      <div className="relative">
-        <h2 className="text-2xl font-semibold text-slate-900 flex items-center gap-3 mb-6">
-          <span className="w-2 h-2 bg-slate-400 rounded-full animate-soft-pulse"></span>
-          Multi-Source Data Ingestion
+    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-6 shadow-sm" aria-labelledby="stage-upload-title">
+      <div>
+        <h2 id="stage-upload-title" className="text-xl font-semibold text-slate-900 mb-1">
+          Upload
         </h2>
+        <p className="text-sm text-slate-600 mb-6">
+          Drop a file to begin. Supported formats: CSV, JSON, FITS, XML. Structure is analyzed before unit selection.
+        </p>
 
-      <Card className="p-6 border-2 border-dashed border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100/50 transition-all duration-300 relative group/card">
+      <Card className="p-6 border-2 border-dashed border-slate-300 bg-slate-50">
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <Upload className="w-5 h-5 text-slate-600 animate-float-gentle group-hover/card:text-slate-700 transition-colors" />
@@ -220,19 +710,37 @@ export default function DataIngestionSection() {
           <Input
             id="file-upload"
             type="file"
-            accept=".csv,.json,.fits,.xml"
+            accept=".csv,.json,.fits,.fit,.fz,.xml"
             onChange={handleFileUpload}
             disabled={uploading || isProcessing}
             className="cursor-pointer"
           />
           {isProcessing && (
             <div className="space-y-2">
-              <div className="flex items-center gap-3 text-sm text-slate-600">
-                <Loader2 className="animate-spin h-4 w-4" />
-                <span>{processingStep || "Processing astronomical data…"}</span>
+              <div className="flex items-center justify-between gap-3 text-sm text-slate-600">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="animate-spin h-4 w-4" />
+                  <span>{processingStep || "Processing astronomical data…"}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { cancelRef.current = true }}
+                >
+                  Cancel
+                </Button>
               </div>
               <Progress value={processingProgress} className="h-2" />
             </div>
+          )}
+          {analysisUsedFallback && !isProcessing && (
+            <Alert variant="destructive" className="bg-red-50 border-red-200">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-800">
+                AI field analysis failed. Conversion accuracy is NOT guaranteed. Conversion is DISABLED.
+              </AlertDescription>
+            </Alert>
           )}
           {uploadSuccess && (
             <Alert className="bg-green-50 border-green-200">
@@ -282,16 +790,98 @@ export default function DataIngestionSection() {
           </Card>
         ))}
       </div>
+
+      {fitsResults.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">FITS Previews (read-only)</h3>
+          <p className="text-sm text-slate-600 mb-4">Each HDU is its own card. Preview images are auto-scaled; metadata is collapsible.</p>
+          <div className="space-y-6">
+            {fitsResults.map((result, resultIdx) => (
+              <Card key={resultIdx} className="p-6 border border-slate-200 overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-medium text-slate-800">{result.fileName}</h4>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFitsResult(resultIdx)}
+                    className="text-slate-400 hover:text-red-600 transition-colors p-1"
+                    title="Remove FITS preview"
+                    aria-label="Remove FITS preview"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {result.status === "valid_no_visualizable_data" && (result.message ?? result.error) && (
+                  <Alert className="bg-blue-50 border-blue-200 mb-4">
+                    <AlertDescription className="text-blue-800">
+                      ℹ️ {result.message ?? result.error ?? "This FITS file is valid but contains no visualizable data products."}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <div className="space-y-4">
+                  {result.hdus.map((hdu) => (
+                    <div key={hdu.index} className="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-slate-700">HDU {hdu.index}</span>
+                        <span className="text-xs text-slate-500">{hdu.type}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                          {hdu.classification === "error_map"
+                            ? "Error Map"
+                            : hdu.classification === "low_contrast_image"
+                              ? "Low Contrast"
+                              : hdu.classification === "image" || hdu.classification === "unknown"
+                                ? "Science Image"
+                                : hdu.classification}
+                        </span>
+                      </div>
+                      {hdu.previewImage && (
+                        <div className="mb-3">
+                          <img
+                            src={hdu.previewImage}
+                            alt={`HDU ${hdu.index} preview`}
+                            className="max-w-full max-h-64 object-contain rounded border border-slate-200"
+                          />
+                          <p className="text-xs text-slate-500 mt-1 font-mono" title="ZScale and percentile scaling are used to auto-enhance contrast for display; data values are unchanged.">
+            Stretch: Auto (ZScale/percentile). Contrast auto-enhanced for visibility.
+          </p>
+                        </div>
+                      )}
+                      {Object.keys(hdu.units).length > 0 && (
+                        <p className="text-xs text-slate-600 mb-1">
+                          Units: {Object.entries(hdu.units).map(([k, v]) => `${k}=${v}`).join(", ")}
+                        </p>
+                      )}
+                      {Object.keys(hdu.metadata).length > 0 && (
+                        <details className="text-xs text-slate-600">
+                          <summary className="cursor-pointer">Header metadata</summary>
+                          <pre className="mt-1 p-2 bg-white rounded border border-slate-100 overflow-auto max-h-32">
+                            {JSON.stringify(hdu.metadata, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Unit Selection Dialog - Blocking modal, no table rendering until confirmed */}
       {pendingAnalysis && (
         <UnitSelectionDialog
+          key={pendingAnalysis.filename}
           open={unitDialogOpen}
           onOpenChange={setUnitDialogOpen}
           fields={pendingAnalysis.fieldAnalysis}
           onConfirm={handleUnitSelectionConfirm}
           onCancel={handleUnitSelectionCancel}
+          columnMetadata={pendingAnalysis.columnMetadata}
+          conversionDisabled={analysisUsedFallback}
+          isProcessing={isProcessing}
+          processingStep={processingStep}
+          processingProgress={processingProgress}
         />
       )}
     </section>

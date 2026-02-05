@@ -1,14 +1,43 @@
 /**
- * STAGE 2 — DATA CONVERSION
- * 
- * Uses ONLY qwen-2.5-3b for numeric conversion.
- * Converts full dataset based on user-selected units.
- * Uses NDJSON (newline-delimited JSON) format for resilient parsing.
+ * STAGE 2 — DATA CONVERSION (explicit conversion specs)
+ *
+ * ConversionSpec from unit-selection dialog only. Qwen receives raw values;
+ * response is per-field arrays; we overwrite chunk with converted values.
+ * Deterministic fallback uses CONVERSION_FACTORS (real math). Never return original chunk.
  */
 
-/**
- * Helper function to chunk an array into smaller arrays
- */
+import { safeExtractJSONObject } from "@/lib/safeExtractJSON"
+import { applyConversionFactor, CONVERSION_FACTORS, factorKey } from "@/lib/unit-conversion"
+
+/** Strict conversion descriptor — populated only from unit-selection dialog state. Logarithmic/categorical must not be included. */
+export interface ConversionSpec {
+  field: string
+  physicalQuantity: string
+  fromUnit: string
+  toUnit: string
+  /** When true, conversion must have a non-empty toUnit (validated before sending to Qwen). */
+  unitRequired?: boolean
+  /** When "logarithmic" or "sexagesimal", this spec must be excluded from conversion (safety). */
+  encoding?: "linear" | "logarithmic" | "sexagesimal" | "categorical" | "identifier"
+}
+
+/** Canonical SI/base units. All source values are normalized to these before Qwen; Qwen converts only canonical → user_selected_unit. */
+const CANONICAL_UNITS: Record<string, string> = {
+  time: "second",
+  length: "m",
+  mass: "kg",
+  angle: "rad",
+  temperature: "kelvin",
+  brightness: "mag",
+  distance: "m",
+  acceleration: "m/s^2",
+}
+
+const QWEN_SYSTEM = `You are a scientific unit conversion engine.
+You MUST numerically convert values.
+You are NOT allowed to return original values.
+You MUST change the numbers.`
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = []
   for (let i = 0; i < arr.length; i += size) {
@@ -17,20 +46,30 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks
 }
 
+/** Field with finalUnit for conversion guard (optional; when provided, guard uses this instead of unitRequiredFields). */
+export interface ConversionFieldGuard {
+  name: string
+  unitRequired: boolean
+  finalUnit: string | null
+  physicalQuantity?: string
+  /** When "time": "quantity" = duration (convert), "calendar" = date (passthrough). */
+  timeKind?: "quantity" | "calendar"
+  /** When "logarithmic" or "sexagesimal", field is excluded from conversion. */
+  encoding?: "linear" | "logarithmic" | "sexagesimal" | "categorical" | "identifier"
+}
+
 export interface ConversionInput {
   filename: string
-  fileType: "csv" | "json" | "xml"
   headers: string[]
-  rows: Record<string, any>[] // Full dataset
-  fieldAnalysis: {
-    field_name: string
-    semantic_type: string
-    unit_required: boolean
-    allowed_units: string[]
-    recommended_unit: string | null
-    reason: string
-  }[]
-  selectedUnits: Record<string, string | null> // User-selected units per field
+  rows: Record<string, any>[]
+  /** Explicit conversion specs from unit-selection dialog. Must have at least one. */
+  conversionSpecs: ConversionSpec[]
+  /** Field names that require a unit; if any has no spec with non-empty toUnit, conversion throws. */
+  unitRequiredFields?: string[]
+  /** When provided, guard runs over these (finalUnit = selected unit); counts/dimensionless never fail. */
+  fields?: ConversionFieldGuard[]
+  onChunkProgress?: (chunkIndex: number, totalChunks: number) => void
+  getCancelRef?: () => boolean
 }
 
 export interface DatasetColumn {
@@ -47,344 +86,452 @@ export interface ConversionOutput {
 }
 
 /**
- * Calls qwen-2.5-3b to convert a single chunk of rows
- * Returns only the converted rows (not columns)
+ * Normalize chunk values to canonical units. Converts each convertible field from source unit to CANONICAL_UNITS[physicalQuantity].
+ * Throws if any required conversion has no factor (blocks ingestion).
+ * SAFETY: Throws if a logarithmic quantity is passed to linear converter.
  */
+function normalizeChunkToCanonical(
+  chunk: Record<string, any>[],
+  specs: ConversionSpec[]
+): Record<string, any>[] {
+  const canonical = chunk.map((row) => ({ ...row }))
+  for (const spec of specs) {
+    if (spec.encoding === "logarithmic") {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn(`Skipping conversion for ${spec.field} (logarithmic quantity)`)
+      }
+      continue
+    }
+    if (spec.encoding === "sexagesimal") {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn(`Skipping unit conversion for ${spec.field} (sexagesimal encoding)`)
+      }
+      continue
+    }
+    if (spec.fromUnit?.toLowerCase() === "sexagesimal" && spec.toUnit?.toLowerCase() !== "sexagesimal") {
+      throw new Error(`Sexagesimal field passed to linear unit converter: ${spec.field}`)
+    }
+    if (spec.fromUnit?.toLowerCase().includes("log")) {
+      throw new Error(`Nonlinear quantity passed to linear converter: ${spec.field}`)
+    }
+    const canonicalUnit = CANONICAL_UNITS[spec.physicalQuantity] ?? spec.fromUnit
+    if (canonicalUnit === spec.fromUnit) {
+      for (let i = 0; i < chunk.length; i++) {
+        const v = chunk[i][spec.field]
+        if (v === null || v === undefined || v === "") continue
+        const n = typeof v === "number" ? v : parseFloat(String(v))
+        if (!Number.isNaN(n)) canonical[i][spec.field] = n
+      }
+      continue
+    }
+    for (let i = 0; i < chunk.length; i++) {
+      const v = chunk[i][spec.field]
+      if (v === null || v === undefined || v === "") continue
+      const n = typeof v === "number" ? v : parseFloat(String(v))
+      if (Number.isNaN(n)) continue
+      const converted = applyConversionFactor(n, spec.fromUnit, canonicalUnit)
+      if (converted === null) {
+        const key = factorKey(spec.fromUnit, canonicalUnit)
+        if (typeof console !== "undefined" && console.error) {
+          console.error(`Missing conversion factor: "${key}" (from "${spec.fromUnit}" to "${canonicalUnit}")`)
+          console.error(`Physical quantity: ${spec.physicalQuantity}`)
+          console.error(`Available keys sample:`, Object.keys(CONVERSION_FACTORS).filter(k => k.includes(spec.fromUnit.substring(0, 5))).slice(0, 10))
+        }
+        throw new Error(
+          `Cannot normalize ${spec.field} from ${spec.fromUnit} to canonical ${canonicalUnit} (key: ${key}) — no conversion factor. Ingestion blocked.`
+        )
+      }
+      canonical[i][spec.field] = converted
+    }
+  }
+  return canonical
+}
+
+/** Build payload: values in CANONICAL units; fromUnit = canonical, toUnit = user-selected. */
+function buildConversionsPayload(
+  chunk: Record<string, any>[],
+  specs: ConversionSpec[]
+): { conversions: Array<{ field: string; physicalQuantity: string; fromUnit: string; toUnit: string; values: (number | null)[] }> } {
+  const conversions = specs.map((spec) => {
+    const canonicalUnit = CANONICAL_UNITS[spec.physicalQuantity] ?? spec.fromUnit
+    const values = chunk.map((row) => {
+      const v = row[spec.field]
+      if (v === null || v === undefined || v === "") return null
+      const n = typeof v === "number" ? v : parseFloat(String(v))
+      return Number.isNaN(n) ? null : n
+    })
+    return {
+      field: spec.field,
+      physicalQuantity: spec.physicalQuantity,
+      fromUnit: canonicalUnit,
+      toUnit: spec.toUnit,
+      values,
+    }
+  })
+  return { conversions }
+}
+
+/** Apply Qwen response to chunk: overwrite chunk[i][field] = val. Returns new rows (copy then overwrite). */
+function applyConvertedValues(
+  chunk: Record<string, any>[],
+  convertedValues: Record<string, (number | null)[]>
+): Record<string, number | string | null>[] {
+  const out = chunk.map((row) => ({ ...row })) as Record<string, number | string | null>[]
+  for (const field of Object.keys(convertedValues)) {
+    const arr = convertedValues[field]
+    if (!Array.isArray(arr)) continue
+    arr.forEach((val, i) => {
+      if (val !== null && out[i]) {
+        out[i][field] = val
+      }
+    })
+  }
+  return out
+}
+
+/** Deterministic fallback: apply CONVERSION_FACTORS per spec. THROWS if no factor exists (ingestion blocked). */
+function applyDeterministicFallback(
+  chunk: Record<string, any>[],
+  specs: ConversionSpec[]
+): Record<string, number | string | null>[] {
+  const out = chunk.map((row) => ({ ...row })) as Record<string, number | string | null>[]
+  for (const spec of specs) {
+    // If fromUnit === toUnit, no conversion needed (already in canonical, target is canonical)
+    if (spec.fromUnit === spec.toUnit) {
+      console.debug(`Deterministic conversion: ${spec.field} ${spec.fromUnit} → ${spec.toUnit} (skipped, same unit)`)
+      continue
+    }
+    const key = factorKey(spec.fromUnit, spec.toUnit)
+    if (!CONVERSION_FACTORS[key]) {
+      // HARD FAIL: missing conversion factor blocks ingestion
+      const availableKeys = Object.keys(CONVERSION_FACTORS)
+        .filter((k) => k.startsWith(spec.fromUnit.toLowerCase().replace(/\s+/g, "_").substring(0, 8)))
+        .slice(0, 10)
+      console.error(`Missing conversion factor: "${key}"`)
+      console.error(`  fromUnit: "${spec.fromUnit}"`)
+      console.error(`  toUnit: "${spec.toUnit}"`)
+      console.error(`  physicalQuantity: ${spec.physicalQuantity}`)
+      console.error(`  Available similar keys:`, availableKeys)
+      throw new Error(
+        `Missing conversion factor for ${spec.field}: "${spec.fromUnit}" → "${spec.toUnit}" (key: ${key}). Ingestion blocked.`
+      )
+    }
+    let converted = 0
+    for (let i = 0; i < chunk.length; i++) {
+      const v = chunk[i][spec.field]
+      const result = applyConversionFactor(v, spec.fromUnit, spec.toUnit)
+      if (result !== null && out[i]) {
+        out[i][spec.field] = result
+        converted++
+      }
+    }
+    console.debug(`Deterministic conversion: ${spec.field} ${spec.fromUnit} → ${spec.toUnit} (${converted}/${chunk.length} values)`)
+  }
+  return out
+}
+
 async function callQwenForChunk(
-  chunkRows: Record<string, any>[],
+  normalizedChunk: Record<string, any>[],
   chunkIndex: number,
   totalChunks: number,
-  fieldAnalysis: ConversionInput["fieldAnalysis"],
-  selectedUnits: ConversionInput["selectedUnits"],
-  headers: string[],
-  isRetry: boolean = false
+  specs: ConversionSpec[]
 ): Promise<Record<string, number | string | null>[] | null> {
+  const payload = buildConversionsPayload(normalizedChunk, specs)
+  const conversionPlan: Record<string, { from: string; to: string }> = {}
+  for (const s of specs) {
+    const canonicalUnit = CANONICAL_UNITS[s.physicalQuantity] ?? s.fromUnit
+    conversionPlan[s.field] = { from: canonicalUnit, to: s.toUnit }
+  }
+  const rowsForPrompt = normalizedChunk.map((row) => {
+    const out: Record<string, number | string | null> = {}
+    for (const s of specs) {
+      out[s.field] = row[s.field] ?? null
+    }
+    return out
+  })
+  if (process.env.NODE_ENV === "development" && typeof console !== "undefined" && specs.length > 0) {
+    const first = specs[0]
+    console.debug("Qwen conversion (canonical → user):", {
+      field: first.field,
+      from: conversionPlan[first.field]?.from,
+      to: first.toUnit,
+    })
+  }
+  const prompt = `Convert the dataset below.
+
+Rules:
+- Source values are in CANONICAL SI units.
+- Convert ONLY the specified fields.
+- Do NOT modify other fields.
+- Output must be valid JSON.
+- Each output value MUST be numerically different unless mathematically equal.
+
+Conversion Plan:
+${JSON.stringify(conversionPlan, null, 2)}
+
+Rows:
+${JSON.stringify(rowsForPrompt)}`
+
   try {
-    // Construct prompt for chunk conversion ONLY
-    // Use stricter prompt on retry
-    const systemInstruction = isRetry
-      ? `You are a strict JSON output engine. You MUST return ONLY valid JSON in the exact format specified. No exceptions.`
-      : `You are a scientific data conversion engine for astronomical measurements.`
-
-    const prompt = `${systemInstruction}
-
-Your task is to convert a CHUNK of rows based on user-selected units. You will return ONLY the converted rows.
-
-IMPORTANT: You MUST return complete, valid JSON. Do NOT truncate the response.
-
-Chunk Information:
-- Chunk ${chunkIndex + 1} of ${totalChunks}
-- Rows in this chunk: ${chunkRows.length}
-- Headers: ${JSON.stringify(headers)}
-
-Field Analysis and Selected Units:
-${JSON.stringify(
-  fieldAnalysis.map((f) => ({
-    field_name: f.field_name,
-    semantic_type: f.semantic_type,
-    selected_unit: selectedUnits[f.field_name] || null,
-  })),
-  null,
-  2
-)}
-
-Rows to Convert:
-${JSON.stringify(chunkRows, null, 2)}
-
-CRITICAL RULES:
-- Output ONLY valid JSON - no explanations, no markdown
-- Return ONLY the "rows" array - do NOT include columns or datasetName
-- Convert ALL numeric values to user-selected units
-- For unit_required=false fields, keep values as-is (no conversion)
-- For unit_required=true fields, convert to selected_unit
-- Preserve non-numeric values (identifiers, strings) unchanged
-- Column names must match original field names
-
-Conversion Rules:
-- right_ascension: deg ↔ rad ↔ hour_angle (1 hour = 15 degrees, 1 rad = 57.2958 degrees)
-- declination: deg ↔ rad (1 rad = 57.2958 degrees)
-- angular_distance: deg ↔ arcmin ↔ arcsec (1 deg = 60 arcmin = 3600 arcsec)
-- distance: AU ↔ km ↔ parsec ↔ lightyear
-  - 1 AU = 149597870.7 km
-  - 1 parsec = 3.085677581e13 km
-  - 1 lightyear = 9.461e12 km
-- brightness: mag → mag (no conversion, passthrough)
-- color_index: mag → mag (no conversion, passthrough)
-- object_id, object_type, observation_time: no conversion (passthrough)
-
-Output Format (NDJSON - ONE ROW PER LINE):
-- Output ONE JSON OBJECT per line
-- Each line is a COMPLETE, VALID JSON object
-- NO surrounding array brackets
-- NO surrounding object braces
-- NO trailing commas
-- NO explanations or text
-- NO markdown code blocks
-
-Example REQUIRED output format:
-{"field_name": converted_value}
-{"field_name": converted_value}
-{"field_name": converted_value}
-
-CRITICAL OUTPUT REQUIREMENTS:
-- Return ONLY valid JSON objects, one per line
-- Do NOT include column definitions
-- Do NOT include datasetName
-- Do NOT include explanations
-- Do NOT include markdown code blocks
-- Do NOT include any text before or after the JSON rows
-- If unsure about a value, use null
-- Convert all rows in this chunk
-- Column names must match original field names
-- Each line must be a complete, parseable JSON object`
-
-    // Call Ollama API with qwen-2.5-3b ONLY
     const response = await fetch("http://localhost:11434/api/generate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "qwen2.5:3b", // ONLY qwen-2.5-3b for this stage
-        prompt: prompt,
+        model: "qwen2.5:3b",
+        prompt: `${QWEN_SYSTEM}\n\n${prompt}`,
         stream: false,
         options: {
-          temperature: 0.1, // Very low temperature for deterministic conversion (≤0.2)
-          top_p: 0.9, // Top-p sampling (≤0.9)
-          num_predict: Math.max(4000, chunkRows.length * 150), // Estimate tokens needed per chunk
+          temperature: 0.1,
+          top_p: 0.9,
+          num_predict: Math.max(4000, normalizedChunk.length * 80),
         },
       }),
     })
+    if (!response.ok) return null
+    const data = await response.json().catch(() => ({}))
+    const responseText = (data.response ?? "") as string
+    const parsed = safeExtractJSONObject(responseText) as Record<string, unknown> | null
+    if (!parsed) return null
 
-    if (!response.ok) {
-      console.error(`Ollama API call failed for chunk ${chunkIndex + 1}:`, response.statusText)
-      return null
+    const convertedValues: Record<string, (number | null)[]> = {}
+    for (const spec of specs) {
+      const arr = parsed[spec.field]
+      if (!Array.isArray(arr) || arr.length !== normalizedChunk.length) continue
+      const nums = arr.map((x) => (x === null || x === undefined ? null : Number(x)))
+      convertedValues[spec.field] = nums
     }
+    if (Object.keys(convertedValues).length === 0) return null
 
-    const data = await response.json()
-    const responseText = data.response || ""
-
-    // Parse NDJSON format: one JSON object per line
-    const lines = responseText.split("\n").map((line) => line.trim()).filter((line) => line.length > 0)
-    const parsedRows: Record<string, number | string | null>[] = []
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      // Skip lines that don't start with '{' (explanations, markdown, etc.)
-      if (!line.startsWith("{")) {
-        continue
-      }
-
-      try {
-        const parsed = JSON.parse(line)
-        // Validate it's an object (not array, string, etc.)
-        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-          parsedRows.push(parsed)
-        } else {
-          console.warn(`Chunk ${chunkIndex + 1}, line ${i + 1}: Skipping non-object JSON`)
+    // Validate: if Qwen returned ALL unchanged values (echo), fall back to deterministic
+    let hasUnchangedField = false
+    for (const spec of specs) {
+      const sent = payload.conversions.find((c) => c.field === spec.field)?.values
+      const recv = convertedValues[spec.field]
+      if (!sent || !recv) continue
+      let allSame = true
+      for (let i = 0; i < sent.length && i < recv.length; i++) {
+        const sentVal = sent[i]
+        const recvVal = recv[i]
+        if (sentVal != null && recvVal != null && Math.abs(sentVal - recvVal) > 1e-10) {
+          allSame = false
+          break
         }
-      } catch (parseError) {
-        // Skip lines that fail to parse (partial JSON, invalid syntax, etc.)
-        console.warn(`Chunk ${chunkIndex + 1}, line ${i + 1}: Failed to parse JSON, skipping: ${line.substring(0, 50)}...`)
-        continue
+      }
+      if (allSame) {
+        console.warn(`Qwen returned unchanged values for ${spec.field}, will fall back to deterministic`)
+        hasUnchangedField = true
       }
     }
-
-    // Validate we got at least some rows
-    if (parsedRows.length === 0) {
-      console.error(`Chunk ${chunkIndex + 1}: No valid rows parsed from NDJSON response`)
+    if (hasUnchangedField) {
+      // Don't use Qwen result if any field was unchanged - fall back to deterministic
       return null
     }
 
-    // Warn if we got fewer rows than expected (but don't fail)
-    if (parsedRows.length < chunkRows.length) {
-      console.warn(
-        `Chunk ${chunkIndex + 1}: Parsed ${parsedRows.length} rows but expected ${chunkRows.length}`
-      )
+    const result = applyConvertedValues(normalizedChunk, convertedValues)
+    if (process.env.NODE_ENV === "development" && typeof console !== "undefined" && console.debug) {
+      for (const field of Object.keys(convertedValues)) {
+        const orig = normalizedChunk[0]?.[field]
+        const conv = convertedValues[field][0]
+        if (orig != null && conv != null) console.debug("Converted sample:", field, orig, "→", conv)
+      }
     }
-
-    return parsedRows
-  } catch (error) {
-    console.error(`Error calling Ollama for chunk ${chunkIndex + 1}:`, error)
+    return result
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("Conversion skipped for")) throw e
+    if (typeof console !== "undefined" && console.warn) console.warn("Qwen chunk error:", e)
     return null
   }
 }
 
-/**
- * Validates and potentially retries chunk conversion with stricter prompt
- */
-async function callQwenForChunkWithValidation(
-  chunkRows: Record<string, any>[],
-  chunkIndex: number,
-  totalChunks: number,
-  fieldAnalysis: ConversionInput["fieldAnalysis"],
-  selectedUnits: ConversionInput["selectedUnits"],
-  headers: string[]
-): Promise<Record<string, number | string | null>[] | null> {
-  // First attempt
-  let result = await callQwenForChunk(
-    chunkRows,
-    chunkIndex,
-    totalChunks,
-    fieldAnalysis,
-    selectedUnits,
-    headers,
-    false // isRetry = false
-  )
+const CONVERSION_CHUNK_SIZE = 300
+const CHUNK_TIMEOUT_MS = 20_000
 
-  // If validation failed, retry with stricter prompt
-  if (!result) {
-    console.warn(`Chunk ${chunkIndex + 1}: First attempt failed validation, retrying with stricter prompt...`)
-    result = await callQwenForChunk(
-      chunkRows,
-      chunkIndex,
-      totalChunks,
-      fieldAnalysis,
-      selectedUnits,
-      headers,
-      true // isRetry = true
-    )
-  }
-
-  // If still invalid after retry, throw error
-  if (!result) {
-    throw new Error(`Invalid LLM response structure for chunk ${chunkIndex + 1} after retry`)
-  }
-
-  return result
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([p, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))])
 }
 
 /**
- * Main conversion function
- * Returns full converted dataset
- * Uses chunked processing to prevent truncated JSON
- * Falls back to local deterministic conversion if LLM fails
+ * Main conversion. Hard-fail if conversionSpecs.length === 0.
+ * Skip dimensionless fields when sending to Qwen. Convert only numeric columns.
+ * Hard-fail if unitRequiredFields is set and any required field has no finalUnit (toUnit).
+ * Fallback = deterministic factors only.
  */
 export async function convertDatasetWithLLM(input: ConversionInput): Promise<ConversionOutput> {
-  const CHUNK_SIZE = 20 // Process 20 rows per chunk
+  if (input.conversionSpecs.length === 0) {
+    const datasetName = input.filename.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_")
+    const columns: DatasetColumn[] = input.headers.map((name) => ({
+      name,
+      semanticType: "",
+      unit: null,
+      description: "",
+    }))
+    return { datasetName, columns, rows: input.rows as Record<string, number | string | null>[] }
+  }
 
-  // Generate dataset name from filename
+  for (const spec of input.conversionSpecs) {
+    if (!spec.fromUnit?.trim()) {
+      throw new Error(`Source unit missing for ${spec.field} — ingestion blocked`)
+    }
+    if (spec.fromUnit === spec.toUnit) {
+      throw new Error(`No conversion for ${spec.field} (source === target) — ingestion blocked`)
+    }
+  }
+
+  // Guard: required numeric fields must have finalUnit; counts, dimensionless, and time+calendar never fail
+  if (input.fields && input.fields.length > 0) {
+    for (const field of input.fields) {
+      if (
+        field.physicalQuantity === "time" &&
+        field.timeKind === "calendar"
+      ) {
+        continue
+      }
+      if (
+        field.unitRequired &&
+        field.physicalQuantity !== "count" &&
+        field.physicalQuantity !== "dimensionless" &&
+        !field.finalUnit
+      ) {
+        throw new Error(`Unit missing for ${field.name}`)
+      }
+    }
+  } else {
+    const unitRequiredFields = input.unitRequiredFields ?? []
+    for (const fieldName of unitRequiredFields) {
+      const spec = input.conversionSpecs.find((s) => s.field === fieldName)
+      const pq = spec?.physicalQuantity
+      if (pq === "count" || pq === "dimensionless") continue
+      if (!spec || !spec.toUnit?.trim()) {
+        throw new Error(`Unit missing for ${fieldName}`)
+      }
+    }
+  }
+
+  // Only numeric scalar quantities are convertible; exclude logarithmic, count, dimensionless, calendar time
+  const CONVERTIBLE_QUANTITIES = [
+    "length",
+    "mass",
+    "time",
+    "temperature",
+    "angle",
+    "brightness",
+    "acceleration",
+  ]
+  const specsForConversion = input.conversionSpecs.filter((s) => {
+    if (s.encoding === "logarithmic") {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn(`Skipping conversion for ${s.field} (logarithmic quantity)`)
+      }
+      return false
+    }
+    if (s.encoding === "sexagesimal") {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn(`Skipping conversion for ${s.field} (sexagesimal encoding)`)
+      }
+      return false
+    }
+    if (s.fromUnit?.toLowerCase() === "sexagesimal" && s.toUnit?.toLowerCase() !== "sexagesimal") {
+      throw new Error(`Sexagesimal field passed to linear unit converter: ${s.field}`)
+    }
+    if (
+      s.physicalQuantity === "time" &&
+      input.fields?.find((f) => f.name === s.field)?.timeKind === "calendar"
+    ) {
+      return false
+    }
+    return (
+      s.toUnit?.trim() &&
+      CONVERTIBLE_QUANTITIES.includes(s.physicalQuantity)
+    )
+  })
+
   const datasetName = input.filename.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_")
+  const columns: DatasetColumn[] = input.headers.map((name) => {
+    const s = input.conversionSpecs.find((sp) => sp.field === name)
+    return {
+      name,
+      semanticType: s?.physicalQuantity ?? "",
+      unit: s?.toUnit ?? null,
+      description: s?.physicalQuantity ?? "",
+    }
+  })
 
-  // Build columns from field analysis (once, reused for all chunks)
-  const columns = input.fieldAnalysis.map((field) => ({
-    name: field.field_name,
-    semanticType: field.semantic_type,
-    unit: input.selectedUnits[field.field_name] || null,
-    description: field.reason, // Use reason as description
-  }))
+  if (specsForConversion.length === 0) {
+    return { datasetName, columns, rows: input.rows as Record<string, number | string | null>[] }
+  }
 
-  // Split rows into chunks
-  const rowChunks = chunkArray(input.rows, CHUNK_SIZE)
+  const rowChunks = chunkArray(input.rows, CONVERSION_CHUNK_SIZE)
   const totalChunks = rowChunks.length
-
-  console.log(`Processing ${input.rows.length} rows in ${totalChunks} chunk(s) of up to ${CHUNK_SIZE} rows each`)
-
-  // Process each chunk
   const allConvertedRows: Record<string, number | string | null>[] = []
-  const failedChunks: number[] = []
 
   for (let i = 0; i < rowChunks.length; i++) {
+    if (input.getCancelRef?.()) break
+    input.onChunkProgress?.(i, totalChunks)
     const chunk = rowChunks[i]
-    console.log(`Processing chunk ${i + 1}/${totalChunks} (${chunk.length} rows)...`)
 
-    // Try to convert chunk
-    let chunkResult = await callQwenForChunk(
-      chunk,
-      i,
-      totalChunks,
-      input.fieldAnalysis,
-      input.selectedUnits,
-      input.headers
-    )
-
-    // Retry once if chunk failed
-    if (!chunkResult) {
-      console.warn(`Chunk ${i + 1} failed, retrying once...`)
-      chunkResult = await callQwenForChunk(
-        chunk,
-        i,
-        totalChunks,
-        input.fieldAnalysis,
-        input.selectedUnits,
-        input.headers
-      )
-    }
-
-    if (chunkResult) {
-      // Validate chunk result has correct number of rows
-      if (chunkResult.length === chunk.length) {
-        allConvertedRows.push(...chunkResult)
-      } else {
-        console.warn(
-          `Chunk ${i + 1}: Expected ${chunk.length} rows but got ${chunkResult.length}, using local conversion for this chunk`
-        )
-        // Fall back to local conversion for this chunk
-        const { convertValue, SemanticType } = await import("./unit-conversion")
-        const localConverted = chunk.map((row) => {
-          const convertedRow: Record<string, number | string | null> = {}
-          input.fieldAnalysis.forEach((field) => {
-            const sourceValue = row[field.field_name]
-            const selectedUnit = input.selectedUnits[field.field_name] || null
-            if (!field.unit_required) {
-              convertedRow[field.field_name] = sourceValue
-            } else {
-              convertedRow[field.field_name] = convertValue(
-                sourceValue,
-                null,
-                selectedUnit,
-                field.semantic_type as SemanticType
-              )
-            }
-          })
-          return convertedRow
-        })
-        allConvertedRows.push(...localConverted)
-      }
-    } else {
-      // Chunk failed after retry - use local conversion
-      console.warn(`Chunk ${i + 1} failed after retry, using local deterministic conversion`)
-      failedChunks.push(i + 1)
-      const { convertValue, SemanticType } = await import("./unit-conversion")
-      const localConverted = chunk.map((row) => {
-        const convertedRow: Record<string, number | string | null> = {}
-        input.fieldAnalysis.forEach((field) => {
-          const sourceValue = row[field.field_name]
-          const selectedUnit = input.selectedUnits[field.field_name] || null
-          if (!field.unit_required) {
-            convertedRow[field.field_name] = sourceValue
-          } else {
-            convertedRow[field.field_name] = convertValue(
-              sourceValue,
-              null,
-              selectedUnit,
-              field.semantic_type as SemanticType
-            )
-          }
-        })
-        return convertedRow
+    const normalizedChunk = normalizeChunkToCanonical(chunk, specsForConversion)
+    
+    // Build specs for canonical → target conversion
+    // Filter out specs where canonical unit === target unit (no further conversion needed)
+    const specsCanonicalToTarget = specsForConversion
+      .map((s) => ({
+        ...s,
+        fromUnit: CANONICAL_UNITS[s.physicalQuantity] ?? s.fromUnit,
+      }))
+      .filter((s) => {
+        if (s.fromUnit === s.toUnit) {
+          console.debug(`Skipping canonical→target for ${s.field}: already in target unit (${s.toUnit})`)
+          return false
+        }
+        return true
       })
-      allConvertedRows.push(...localConverted)
+
+    // If no conversions needed for canonical → target, just use normalized chunk
+    let chunkResult: Record<string, number | string | null>[]
+    if (specsCanonicalToTarget.length === 0) {
+      // All fields already in target unit after source→canonical normalization
+      chunkResult = normalizedChunk as Record<string, number | string | null>[]
+    } else {
+      let qwenResult = await withTimeout(callQwenForChunk(normalizedChunk, i, totalChunks, specsCanonicalToTarget), CHUNK_TIMEOUT_MS)
+      if (!qwenResult) {
+        qwenResult = await withTimeout(callQwenForChunk(normalizedChunk, i, totalChunks, specsCanonicalToTarget), CHUNK_TIMEOUT_MS)
+      }
+      if (!qwenResult) {
+        // Qwen failed twice, use deterministic fallback
+        chunkResult = applyDeterministicFallback(normalizedChunk, specsCanonicalToTarget)
+      } else {
+        chunkResult = qwenResult
+      }
     }
+    allConvertedRows.push(...chunkResult)
   }
 
-  // Check if any chunks failed
-  if (failedChunks.length > 0) {
-    console.warn(`Conversion completed with ${failedChunks.length} chunk(s) using local fallback: ${failedChunks.join(", ")}`)
-  }
-
-  // Validate we have all rows
   if (allConvertedRows.length !== input.rows.length) {
-    console.error(
-      `Row count mismatch: expected ${input.rows.length} but got ${allConvertedRows.length}`
-    )
-    // This should not happen, but if it does, we'll still return what we have
+    throw new Error(`Row count mismatch: expected ${input.rows.length}, got ${allConvertedRows.length}`)
   }
 
-  return {
-    datasetName,
-    columns,
-    rows: allConvertedRows,
+  // Mandatory post-conversion validation: numeric values must change after conversion
+  // Note: We compare numeric values, not raw values (original might be string, converted is number)
+  for (const spec of specsForConversion) {
+    let unchangedCount = 0
+    let totalChecked = 0
+    for (let i = 0; i < Math.min(input.rows.length, 50); i++) { // Sample first 50 rows
+      const originalValue = input.rows[i][spec.field]
+      const convertedValue = allConvertedRows[i]?.[spec.field]
+      if (originalValue == null || convertedValue == null) continue
+      totalChecked++
+      const origNum = typeof originalValue === "number" ? originalValue : parseFloat(String(originalValue))
+      const convNum = typeof convertedValue === "number" ? convertedValue : parseFloat(String(convertedValue))
+      if (!Number.isNaN(origNum) && !Number.isNaN(convNum) && Math.abs(origNum - convNum) < 1e-10) {
+        unchangedCount++
+      }
+    }
+    // If ALL checked values are unchanged, that's a bug (conversion skipped)
+    if (totalChecked > 0 && unchangedCount === totalChecked) {
+      throw new Error(`Conversion skipped for ${spec.field} (all ${totalChecked} sampled values unchanged) — ingestion blocked`)
+    }
+    console.debug(`Post-validation ${spec.field}: ${unchangedCount}/${totalChecked} values unchanged (threshold: all)`)
   }
+
+  return { datasetName, columns, rows: allConvertedRows }
 }
-
