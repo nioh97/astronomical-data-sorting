@@ -136,17 +136,17 @@ export function UnitSelectionDialog({
         onCancel()
       }
     }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-zinc-900 border-zinc-700 text-zinc-100" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>Select Final Units for Dataset Fields</DialogTitle>
-          <p className="text-sm text-slate-600 mt-2">
+          <DialogTitle className="text-zinc-100">Select Final Units for Dataset Fields</DialogTitle>
+          <p className="text-sm text-zinc-400 mt-2">
             Review the field analysis and AI recommendations. The unit selector is shown only for quantitative fields (Unit Required: Yes); non-quantitative fields are locked. Conversion will only occur after you confirm.
           </p>
         </DialogHeader>
 
         {isProcessing && (
           <div className="space-y-2 py-4">
-            <div className="flex items-center gap-3 text-sm text-slate-600">
+            <div className="flex items-center gap-3 text-sm text-zinc-400">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>{processingStep || "Converting…"}</span>
             </div>
@@ -155,16 +155,16 @@ export function UnitSelectionDialog({
         )}
 
         <div className="space-y-4 mt-4">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-zinc-700">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left py-3 px-4 text-slate-900 font-semibold">Field Name</th>
-                  <th className="text-left py-3 px-4 text-slate-900 font-semibold">Physical Quantity</th>
-                  <th className="text-left py-3 px-4 text-slate-900 font-semibold">Unit Required</th>
-                  <th className="text-left py-3 px-4 text-slate-900 font-semibold">AI Recommended Unit</th>
-                  <th className="text-left py-3 px-4 text-slate-900 font-semibold">Final Unit</th>
-                  <th className="text-left py-3 px-4 text-slate-900 font-semibold">Reason</th>
+                <tr className="border-b border-zinc-700 bg-zinc-800">
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Field Name</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Physical Quantity</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Unit Required</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">AI Recommended</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Final Unit</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -179,42 +179,42 @@ export function UnitSelectionDialog({
 
                   const displayName = columnMetadata?.[field.field_name]?.description ?? field.field_name
                   return (
-                    <tr key={field.field_name} className="border-b border-slate-100">
+                    <tr key={field.field_name} className="border-b border-zinc-800 hover:bg-zinc-800/50">
                       <td className="py-3 px-4">
-                        <span className="font-medium text-slate-900">{displayName}</span>
+                        <span className="font-medium text-zinc-100">{displayName}</span>
                         {columnMetadata?.[field.field_name] && (
-                          <span className="ml-2 font-mono text-xs text-slate-500">{field.field_name}</span>
+                          <span className="ml-2 font-mono text-xs text-zinc-500">{field.field_name}</span>
                         )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="text-xs border-zinc-600 text-zinc-300">
                             {field.physicalQuantity ?? field.semantic_type}
                           </Badge>
                           {isLogarithmic(field) && (
-                            <Badge variant="secondary" className="text-xs bg-slate-200 text-slate-700">
-                              Logarithmic quantity (conversion disabled)
+                            <Badge variant="secondary" className="text-xs bg-zinc-700 text-zinc-300">
+                              Logarithmic (locked)
                             </Badge>
                           )}
                           {isSexagesimal(field) && (
-                            <Badge variant="secondary" className="text-xs bg-slate-200 text-slate-700">
-                              Sexagesimal coordinate (locked)
+                            <Badge variant="secondary" className="text-xs bg-zinc-700 text-zinc-300">
+                              Sexagesimal (locked)
                             </Badge>
                           )}
                           {needsConfirmation && !isLogarithmic(field) && !isSexagesimal(field) && (
-                            <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800">
+                            <Badge variant="secondary" className="text-xs bg-amber-900/50 text-amber-300 border-amber-700">
                               Needs confirmation
                             </Badge>
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="py-3 px-4 text-zinc-400">
                         {field.unit_required ? (
-                          <Badge variant="default" className="text-xs bg-green-100 text-green-800">
+                          <Badge variant="default" className="text-xs bg-emerald-900/50 text-emerald-300 border-emerald-700">
                             Yes
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary" className="text-xs bg-zinc-700 text-zinc-400">
                             No (locked)
                           </Badge>
                         )}
@@ -222,26 +222,26 @@ export function UnitSelectionDialog({
                       <td className="py-3 px-4">
                         {field.recommended_unit ? (
                           <div className="flex flex-col gap-1">
-                            <span className="text-sm font-medium text-slate-900">
+                            <span className="text-sm font-medium text-zinc-100">
                               {field.recommended_unit}
                             </span>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <span className="text-xs text-slate-500 italic cursor-help underline decoration-dotted">
+                                  <span className="text-xs text-zinc-500 italic cursor-help underline decoration-dotted">
                                     {field.reason.length > 50
                                       ? field.reason.substring(0, 50) + "..."
                                       : field.reason}
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent className="max-w-md">
+                                <TooltipContent className="max-w-md bg-zinc-800 border-zinc-700 text-zinc-200">
                                   <p className="text-sm">{field.reason}</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </div>
                         ) : (
-                          <span className="text-slate-400 text-sm">—</span>
+                          <span className="text-zinc-500 text-sm">—</span>
                         )}
                       </td>
                       <td className="py-3 px-4">
@@ -249,7 +249,7 @@ export function UnitSelectionDialog({
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="text-slate-500 italic text-sm">
+                                <span className="text-zinc-500 italic text-sm">
                                   {isLogarithmic(field)
                                     ? (field.recommended_unit || "log unit")
                                     : isSexagesimal(field)
@@ -258,7 +258,7 @@ export function UnitSelectionDialog({
                                   (locked)
                                 </span>
                               </TooltipTrigger>
-                              <TooltipContent className="max-w-sm">
+                              <TooltipContent className="max-w-sm bg-zinc-800 border-zinc-700 text-zinc-200">
                                 {isLogarithmic(field) ? (
                                   <p className="text-sm">
                                     This field stores a logarithmic value (e.g. log₁₀). Converting units would require nonlinear transformation and is intentionally disabled.
@@ -278,18 +278,18 @@ export function UnitSelectionDialog({
                             value={currentUnit || ""}
                             onValueChange={(value) => handleUnitChange(field.field_name, value || null)}
                           >
-                            <SelectTrigger className="w-40">
+                            <SelectTrigger className="w-36 bg-zinc-800 border-zinc-600 text-zinc-100">
                               <SelectValue placeholder="Select unit" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="bg-zinc-800 border-zinc-700">
                               {effectiveUnits.length === 0 ? (
-                                <SelectItem value="none">none</SelectItem>
+                                <SelectItem value="none" className="text-zinc-300">none</SelectItem>
                               ) : (
                                 effectiveUnits.map((unit) => (
-                                  <SelectItem key={unit} value={unit}>
+                                  <SelectItem key={unit} value={unit} className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">
                                     {unit}
                                     {unit === field.recommended_unit && (
-                                      <span className="ml-2 text-xs text-blue-600">(AI recommended)</span>
+                                      <span className="ml-2 text-xs text-blue-400">(AI)</span>
                                     )}
                                   </SelectItem>
                                 ))
@@ -298,17 +298,17 @@ export function UnitSelectionDialog({
                           </Select>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 text-xs">
+                      <td className="py-3 px-4 text-zinc-400 text-xs max-w-[200px]">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="cursor-help underline decoration-dotted">
-                                {field.reason.length > 60
-                                  ? field.reason.substring(0, 60) + "..."
+                              <span className="cursor-help underline decoration-dotted truncate block">
+                                {field.reason.length > 40
+                                  ? field.reason.substring(0, 40) + "..."
                                   : field.reason}
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent className="max-w-md">
+                            <TooltipContent className="max-w-md bg-zinc-800 border-zinc-700 text-zinc-200">
                               <p className="text-sm">{field.reason}</p>
                             </TooltipContent>
                           </Tooltip>
@@ -322,13 +322,13 @@ export function UnitSelectionDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleCancel} disabled={isProcessing}>
+        <DialogFooter className="border-t border-zinc-700 pt-4 mt-4">
+          <Button variant="outline" onClick={handleCancel} disabled={isProcessing} className="border-zinc-600 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
             Cancel
           </Button>
           <Button
             onClick={handleConfirm}
-            className="bg-slate-900 hover:bg-slate-800"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
             disabled={conversionDisabled || isProcessing}
           >
             Confirm & Convert

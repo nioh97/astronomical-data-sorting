@@ -23,17 +23,17 @@ const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload
     return (
-      <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg">
-        <p className="font-semibold text-slate-900 mb-2">
+      <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-3 shadow-lg">
+        <p className="font-semibold text-zinc-100 mb-2">
           {data.object_id ? `Object: ${data.object_id}` : "Object"}
         </p>
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-zinc-300">
           <span className="font-medium">Distance:</span>{" "}
           {data.distance !== null && data.distance !== undefined
             ? `${data.distance.toExponential(2)} km`
             : "—"}
         </p>
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-zinc-300">
           <span className="font-medium">Brightness:</span>{" "}
           {data.brightness !== null && data.brightness !== undefined
             ? `${data.brightness.toFixed(2)} mag`
@@ -131,17 +131,17 @@ export default function VisualizationSection() {
   }, [filteredDatasets])
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
+    <section className="space-y-6 bg-zinc-900 rounded-lg border border-zinc-700 p-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-slate-900">Data Visualization & Analysis</h2>
+        <h2 className="text-2xl font-semibold text-zinc-100">Data Visualization & Analysis</h2>
         {isFiltered && (
-          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border border-blue-200">
+          <Badge variant="secondary" className="bg-blue-900/30 text-blue-300 border border-blue-800">
             Showing filtered data
           </Badge>
         )}
       </div>
 
-      <div className="text-sm text-slate-700 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+      <div className="text-sm text-zinc-300 bg-blue-900/20 border border-blue-800/50 rounded-lg p-4 mb-6">
         {isFiltered
           ? "Visualizations reflect your active filters. Clear filters in the Repository to see all data."
           : "These visualizations demonstrate the power of unified data fusion: cross-agency comparison is now possible because all data is standardized and harmonized."}
@@ -149,28 +149,28 @@ export default function VisualizationSection() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Scatter Chart - Distance vs Brightness */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Distance vs Brightness</h3>
+        <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-zinc-100 mb-4">Distance vs Brightness</h3>
           {distanceBrightnessData.length === 0 ? (
-            <div className="flex items-center justify-center h-[300px] text-slate-500">
+            <div className="flex items-center justify-center h-[300px] text-zinc-500">
               <p>Not enough data to plot Distance vs Brightness</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.3)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(82, 82, 91, 0.5)" />
                 <XAxis
                   dataKey="distance"
                   type="number"
                   scale="log"
                   domain={["auto", "auto"]}
-                  stroke="#64748b"
+                  stroke="#a1a1aa"
                   tickFormatter={formatLogTick}
                   label={{
                     value: "Distance (km)",
                     position: "insideBottom",
                     offset: -10,
-                    fill: "#64748b",
+                    fill: "#a1a1aa",
                     style: { textAnchor: "middle" },
                   }}
                 />
@@ -179,39 +179,39 @@ export default function VisualizationSection() {
                   type="number"
                   domain={["auto", "auto"]}
                   reversed
-                  stroke="#64748b"
+                  stroke="#a1a1aa"
                   label={{
                     value: "Apparent Magnitude",
                     angle: -90,
                     position: "insideLeft",
-                    fill: "#64748b",
+                    fill: "#a1a1aa",
                   }}
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
-                <Scatter name="Objects" data={distanceBrightnessData} fill="#3b82f6" />
+                <Scatter name="Objects" data={distanceBrightnessData} fill="#60a5fa" />
               </ScatterChart>
             </ResponsiveContainer>
           )}
         </div>
 
         {/* Bar Chart */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Objects per Source Agency</h3>
+        <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-zinc-100 mb-4">Objects per Source Agency</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={agencyCountData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.3)" />
-              <XAxis dataKey="agency" stroke="#64748b" />
-              <YAxis stroke="#64748b" label={{ value: "Count", angle: -90, position: "insideLeft", fill: "#64748b" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(82, 82, 91, 0.5)" />
+              <XAxis dataKey="agency" stroke="#a1a1aa" />
+              <YAxis stroke="#a1a1aa" label={{ value: "Count", angle: -90, position: "insideLeft", fill: "#a1a1aa" }} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: "#27272a",
+                  border: "1px solid #3f3f46",
                   borderRadius: "6px",
-                  color: "#1e293b",
-                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                  color: "#fafafa",
+                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.3)",
                 }}
               />
-              <Bar dataKey="count" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="count" fill="#60a5fa" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

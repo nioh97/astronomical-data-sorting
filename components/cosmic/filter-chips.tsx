@@ -41,14 +41,14 @@ function FilterChip({ filter, onRemove }: FilterChipProps) {
   return (
     <Badge
       variant="secondary"
-      className="flex items-center gap-1 pr-1 text-sm font-normal bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition"
+      className="flex items-center gap-1 pr-1 text-sm font-normal bg-blue-900/30 text-blue-300 border border-blue-800 hover:bg-blue-900/50 transition"
     >
       <span className="truncate max-w-[200px]" title={description}>
         {description}
       </span>
       <button
         onClick={onRemove}
-        className="ml-1 p-0.5 rounded hover:bg-blue-200 transition"
+        className="ml-1 p-0.5 rounded hover:bg-blue-800 transition"
         aria-label={`Remove filter: ${description}`}
       >
         <X className="h-3 w-3" />
@@ -70,14 +70,14 @@ function GlobalSearchChip({ query, onClear }: GlobalSearchChipProps) {
   return (
     <Badge
       variant="secondary"
-      className="flex items-center gap-1 pr-1 text-sm font-normal bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition"
+      className="flex items-center gap-1 pr-1 text-sm font-normal bg-emerald-900/30 text-emerald-300 border border-emerald-800 hover:bg-emerald-900/50 transition"
     >
       <span className="truncate max-w-[150px]" title={`Search: "${query}"`}>
         Search: "{query}"
       </span>
       <button
         onClick={onClear}
-        className="ml-1 p-0.5 rounded hover:bg-green-200 transition"
+        className="ml-1 p-0.5 rounded hover:bg-emerald-800 transition"
         aria-label="Clear search"
       >
         <X className="h-3 w-3" />
@@ -140,13 +140,13 @@ export function FilterChips({
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
       {/* Stats */}
       {showStats && isFiltered && (
-        <span className="text-sm text-slate-500">
+        <span className="text-sm text-zinc-500">
           Showing{" "}
-          <span className="font-medium text-slate-700">
+          <span className="font-medium text-zinc-300">
             {result.filteredRows.toLocaleString()}
           </span>{" "}
           of{" "}
-          <span className="font-medium text-slate-700">
+          <span className="font-medium text-zinc-300">
             {result.totalRows.toLocaleString()}
           </span>{" "}
           rows
@@ -155,7 +155,7 @@ export function FilterChips({
 
       {/* Separator */}
       {showStats && isFiltered && hasAnyFilter && (
-        <span className="text-slate-300">|</span>
+        <span className="text-zinc-600">|</span>
       )}
 
       {/* Global search chip */}
@@ -176,7 +176,7 @@ export function FilterChips({
       {(activeFilters.length > 1 || (activeFilters.length > 0 && hasGlobalSearch)) && (
         <button
           onClick={handleClearAll}
-          className="text-xs text-slate-500 hover:text-red-500 hover:underline transition"
+          className="text-xs text-zinc-500 hover:text-red-400 hover:underline transition"
         >
           Clear all
         </button>
@@ -221,15 +221,15 @@ export function FilterSummary({ dataset, className = "" }: FilterSummaryProps) {
 
   return (
     <div className={`flex items-center gap-3 text-sm ${className}`}>
-      <Badge variant="secondary" className="font-normal">
+      <Badge variant="secondary" className="font-normal bg-blue-900/50 text-blue-300 border-blue-700">
         {totalFilters} filter{totalFilters !== 1 ? "s" : ""} active
       </Badge>
-      <span className="text-slate-500">
+      <span className="text-zinc-500">
         {result.filteredRows.toLocaleString()} / {result.totalRows.toLocaleString()} rows
       </span>
       <button
         onClick={handleClearAll}
-        className="text-slate-400 hover:text-red-500 transition"
+        className="text-zinc-500 hover:text-red-400 transition"
         title="Clear all filters"
       >
         <X className="h-4 w-4" />

@@ -83,12 +83,12 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
 
   if (!plot.success) {
     return (
-      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-        <div className="flex items-center gap-2 text-slate-500 mb-2">
+      <div className="p-4 bg-zinc-800 rounded-lg border border-zinc-700">
+        <div className="flex items-center gap-2 text-zinc-400 mb-2">
           {icon}
           <span className="font-medium">{title}</span>
         </div>
-        <p className="text-sm text-slate-400">{plot.message || "Not available"}</p>
+        <p className="text-sm text-zinc-500">{plot.message || "Not available"}</p>
       </div>
     )
   }
@@ -97,19 +97,19 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
   const hasStatic = !!plot.static_path
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden border-zinc-700 bg-zinc-900">
       {/* Header */}
-      <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+      <div className="p-3 bg-zinc-800 border-b border-zinc-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {icon}
-          <span className="font-medium text-slate-900">{title}</span>
+          <span className="font-medium text-zinc-100">{title}</span>
           {plot.metadata?.total_points && (
-            <Badge variant="secondary" className="text-xs">
+            <Badge variant="secondary" className="text-xs bg-blue-900/50 text-blue-300 border-blue-700">
               {(plot.metadata.total_points as number).toLocaleString()} points
             </Badge>
           )}
           {plot.metadata?.was_downsampled && (
-            <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+            <Badge variant="outline" className="text-xs text-amber-400 border-amber-700 bg-amber-900/30">
               Downsampled
             </Badge>
           )}
@@ -121,7 +121,7 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
               variant={showInteractive ? "default" : "outline"}
               size="sm"
               onClick={() => setShowInteractive(true)}
-              className="h-7 text-xs"
+              className={`h-7 text-xs ${showInteractive ? 'bg-blue-600 hover:bg-blue-700' : 'border-zinc-600 text-zinc-300 hover:bg-zinc-700'}`}
             >
               Interactive
             </Button>
@@ -129,7 +129,7 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
               variant={!showInteractive ? "default" : "outline"}
               size="sm"
               onClick={() => setShowInteractive(false)}
-              className="h-7 text-xs"
+              className={`h-7 text-xs ${!showInteractive ? 'bg-blue-600 hover:bg-blue-700' : 'border-zinc-600 text-zinc-300 hover:bg-zinc-700'}`}
             >
               Static
             </Button>
@@ -142,14 +142,14 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
         {showInteractive && hasInteractive ? (
           <iframe
             src={plot.interactive_path!}
-            className="w-full h-[500px] border-0 rounded"
+            className="w-full h-[500px] border-0 rounded bg-zinc-800"
             title={title}
             sandbox="allow-scripts allow-same-origin"
           />
         ) : hasStatic ? (
           imageError ? (
-            <div className="flex items-center justify-center h-[400px] bg-slate-50 rounded">
-              <div className="text-center text-slate-400">
+            <div className="flex items-center justify-center h-[400px] bg-zinc-800 rounded">
+              <div className="text-center text-zinc-500">
                 <ImageIcon className="w-12 h-12 mx-auto mb-2" />
                 <p>Failed to load image</p>
               </div>
@@ -163,8 +163,8 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
             />
           )
         ) : (
-          <div className="flex items-center justify-center h-[400px] bg-slate-50 rounded">
-            <p className="text-slate-400">No visualization available</p>
+          <div className="flex items-center justify-center h-[400px] bg-zinc-800 rounded">
+            <p className="text-zinc-500">No visualization available</p>
           </div>
         )}
       </div>
@@ -173,13 +173,13 @@ function PlotDisplay({ plot, title, icon }: PlotDisplayProps) {
       {plot.metadata && Object.keys(plot.metadata).length > 0 && (
         <Collapsible>
           <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="w-full h-8 text-xs text-slate-500">
+            <Button variant="ghost" size="sm" className="w-full h-8 text-xs text-zinc-500 hover:text-zinc-300">
               Show details
               <ChevronDown className="w-3 h-3 ml-1" />
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="p-3 bg-slate-50 text-xs font-mono text-slate-600 max-h-40 overflow-auto">
+            <div className="p-3 bg-zinc-800 text-xs font-mono text-zinc-400 max-h-40 overflow-auto">
               <pre>{JSON.stringify(plot.metadata, null, 2)}</pre>
             </div>
           </CollapsibleContent>
@@ -284,37 +284,37 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
       <CollapsibleTrigger asChild>
         <Button
           variant="ghost"
-          className="w-full justify-between p-4 h-auto border-t border-slate-100"
+          className="w-full justify-between p-4 h-auto border-t border-zinc-700 hover:bg-zinc-800"
         >
           <div className="flex items-center gap-2">
-            <Map className="w-4 h-4 text-purple-500" />
-            <span className="font-medium text-slate-700">Advanced Visualizations</span>
+            <Map className="w-4 h-4 text-purple-400" />
+            <span className="font-medium text-zinc-300">Advanced Visualizations</span>
             {result && result.success && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="text-xs bg-blue-900/50 text-blue-300 border-blue-700">
                 {successfulPlotCount} plot{successfulPlotCount !== 1 ? "s" : ""}
               </Badge>
             )}
             {filtersChanged && (
-              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+              <Badge variant="outline" className="text-xs text-amber-400 border-amber-700 bg-amber-900/30">
                 Filters changed
               </Badge>
             )}
           </div>
           {isOpen ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
+            <ChevronUp className="w-4 h-4 text-zinc-500" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
+            <ChevronDown className="w-4 h-4 text-zinc-500" />
           )}
         </Button>
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="p-4 border-t border-slate-100 space-y-4">
+        <div className="p-4 border-t border-zinc-700 space-y-4">
           {/* Description */}
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-zinc-400">
             Generate astronomy-grade visualizations powered by Python (Astropy, Matplotlib, Bokeh).
             {filterResult.filteredRows < filterResult.totalRows && (
-              <span className="text-blue-600 ml-1">
+              <span className="text-blue-400 ml-1">
                 Showing {filterResult.filteredRows.toLocaleString()} filtered rows.
               </span>
             )}
@@ -325,7 +325,7 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
             <Button
               onClick={generateVisualizations}
               disabled={isLoading}
-              className="gap-2"
+              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
             >
               {isLoading ? (
                 <>
@@ -346,7 +346,7 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
             </Button>
 
             {result && result.timing?.total_ms && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-zinc-500">
                 Generated in {(result.timing.total_ms / 1000).toFixed(1)}s
               </span>
             )}
@@ -354,11 +354,11 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
 
           {/* Error display */}
           {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div className="flex items-start gap-2 p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-400" />
               <div>
                 <p className="font-medium">Visualization Error</p>
-                <p className="text-red-600">{error}</p>
+                <p className="text-red-400">{error}</p>
                 <p className="text-xs text-red-500 mt-1">
                   Ensure Python dependencies are installed: pip install -r lib/python-visualization/requirements.txt
                 </p>
@@ -381,8 +381,8 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
               {/* Scatter Plots */}
               {result.plots.scatter_plots.length > 0 && (
                 <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                    <ScatterChart className="w-4 h-4 text-green-500" />
+                  <h4 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                    <ScatterChart className="w-4 h-4 text-emerald-400" />
                     Scatter Plots
                   </h4>
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -395,7 +395,7 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
                             ? `${plot.y_column} vs ${plot.x_column}`
                             : `Scatter Plot ${index + 1}`
                         }
-                        icon={<ScatterChart className="w-4 h-4 text-green-500" />}
+                        icon={<ScatterChart className="w-4 h-4 text-emerald-400" />}
                       />
                     ))}
                   </div>
@@ -407,16 +407,16 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
                 <PlotDisplay
                   plot={result.plots.time_series}
                   title="Time Series"
-                  icon={<LineChart className="w-4 h-4 text-purple-500" />}
+                  icon={<LineChart className="w-4 h-4 text-purple-400" />}
                 />
               )}
 
               {/* No visualizations warning */}
               {successfulPlotCount === 0 && (
-                <div className="text-center py-8 text-slate-500">
-                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                <div className="text-center py-8 text-zinc-500">
+                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-zinc-600" />
                   <p>No visualizations could be generated from this dataset.</p>
-                  <p className="text-sm text-slate-400 mt-1">
+                  <p className="text-sm text-zinc-600 mt-1">
                     The dataset may be missing RA/Dec, time, or numeric columns.
                   </p>
                 </div>
@@ -428,9 +428,9 @@ export function VisualizationPanel({ dataset }: VisualizationPanelProps) {
           {isLoading && (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-500" />
-                <p className="text-slate-600">Generating visualizations...</p>
-                <p className="text-sm text-slate-400 mt-1">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-400" />
+                <p className="text-zinc-300">Generating visualizations...</p>
+                <p className="text-sm text-zinc-500 mt-1">
                   This may take a few seconds for large datasets
                 </p>
               </div>

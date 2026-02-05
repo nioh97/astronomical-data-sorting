@@ -123,3 +123,23 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============================================
+   LANDING PAGE BLOB CURSOR
+   ============================================
+   Single solid blob with mix-blend-mode: difference
+   for automatic text color inversion.
+*/
+
+/* Isolate Spline canvas from blend mode effects */
+.spline-container,
+.spline-container * {
+  isolation: isolate;
+}
+
+/* Hide blob cursor on mobile/touch devices */
+@media (hover: none) and (pointer: coarse) {
+  #landing-root > [aria-hidden="true"] {
+    display: none !important;
+  }
+}

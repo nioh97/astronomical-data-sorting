@@ -689,35 +689,35 @@ export default function DataIngestionSection() {
   }
 
   return (
-    <section className="space-y-6 bg-white rounded-lg border border-slate-200 p-6 shadow-sm" aria-labelledby="stage-upload-title">
+    <section className="space-y-6 bg-zinc-900 rounded-lg border border-zinc-700 p-6" aria-labelledby="stage-upload-title">
       <div>
-        <h2 id="stage-upload-title" className="text-xl font-semibold text-slate-900 mb-1">
+        <h2 id="stage-upload-title" className="text-xl font-semibold text-zinc-100 mb-1">
           Upload
         </h2>
-        <p className="text-sm text-slate-600 mb-6">
+        <p className="text-sm text-zinc-400 mb-6">
           Drop a file to begin. Supported formats: CSV, JSON, FITS, XML. Structure is analyzed before unit selection.
         </p>
 
-      <Card className="p-6 border-2 border-dashed border-slate-300 bg-slate-50">
+      <Card className="p-6 border-2 border-dashed border-zinc-600 bg-zinc-800/50">
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <Upload className="w-5 h-5 text-slate-600 animate-float-gentle group-hover/card:text-slate-700 transition-colors" />
-            <Label htmlFor="file-upload" className="text-base font-medium text-slate-900 cursor-pointer">
+            <Upload className="w-5 h-5 text-zinc-400 animate-float-gentle group-hover/card:text-zinc-300 transition-colors" />
+            <Label htmlFor="file-upload" className="text-base font-medium text-zinc-100 cursor-pointer">
               Upload Astronomical Dataset
             </Label>
           </div>
-          <p className="text-sm text-slate-600">Supported formats: CSV, JSON, FITS, XML</p>
+          <p className="text-sm text-zinc-400">Supported formats: CSV, JSON, FITS, XML</p>
           <Input
             id="file-upload"
             type="file"
             accept=".csv,.json,.fits,.fit,.fz,.xml"
             onChange={handleFileUpload}
             disabled={uploading || isProcessing}
-            className="cursor-pointer"
+            className="cursor-pointer bg-zinc-800 border-zinc-600 text-zinc-100 file:bg-zinc-700 file:text-zinc-100 file:border-0"
           />
           {isProcessing && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3 text-sm text-slate-600">
+              <div className="flex items-center justify-between gap-3 text-sm text-zinc-400">
                 <div className="flex items-center gap-3">
                   <Loader2 className="animate-spin h-4 w-4" />
                   <span>{processingStep || "Processing astronomical data…"}</span>
@@ -727,6 +727,7 @@ export default function DataIngestionSection() {
                   variant="ghost"
                   size="sm"
                   onClick={() => { cancelRef.current = true }}
+                  className="text-zinc-400 hover:text-zinc-100"
                 >
                   Cancel
                 </Button>
@@ -735,25 +736,25 @@ export default function DataIngestionSection() {
             </div>
           )}
           {analysisUsedFallback && !isProcessing && (
-            <Alert variant="destructive" className="bg-red-50 border-red-200">
-              <AlertCircle className="h-4 w-4 text-red-600" />
-              <AlertDescription className="text-red-800">
+            <Alert variant="destructive" className="bg-red-900/30 border-red-800">
+              <AlertCircle className="h-4 w-4 text-red-400" />
+              <AlertDescription className="text-red-300">
                 AI field analysis failed. Conversion accuracy is NOT guaranteed. Conversion is DISABLED.
               </AlertDescription>
             </Alert>
           )}
           {uploadSuccess && (
-            <Alert className="bg-green-50 border-green-200">
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">
+            <Alert className="bg-emerald-900/30 border-emerald-800">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              <AlertDescription className="text-emerald-300">
                 Dataset uploaded and processed successfully!
               </AlertDescription>
             </Alert>
           )}
           {uploadError && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{uploadError}</AlertDescription>
+            <Alert variant="destructive" className="bg-red-900/30 border-red-800">
+              <AlertCircle className="h-4 w-4 text-red-400" />
+              <AlertDescription className="text-red-300">{uploadError}</AlertDescription>
             </Alert>
           )}
         </div>
@@ -761,19 +762,18 @@ export default function DataIngestionSection() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {ingestedDatasets.map((ds, idx) => (
-          <Card key={idx} className="p-6 hover:shadow-lg transition-all duration-500 hover:-translate-y-1 hover:scale-[1.02] group/card relative">
-            <div className="absolute inset-0 border border-transparent group-hover/card:border-slate-300/50 rounded-lg transition-all duration-300"></div>
+          <Card key={idx} className="p-6 bg-zinc-800 border-zinc-700 hover:border-zinc-600 transition-all duration-300 group/card relative">
             <div className="relative">
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-semibold text-slate-900">{ds.name}</h3>
+                  <h3 className="text-lg font-semibold text-zinc-100">{ds.name}</h3>
                   <div className="flex items-center gap-2">
                     {ds.status === "completed" && (
-                      <CheckCircle2 className="w-5 h-5 text-green-600 animate-soft-pulse" />
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                     )}
                     <button
                       onClick={() => handleDeleteDataset(idx)}
-                      className="text-slate-400 hover:text-red-600 transition-colors"
+                      className="text-zinc-500 hover:text-red-400 transition-colors"
                       title="Remove dataset"
                     >
                       <X className="w-4 h-4" />
@@ -781,7 +781,7 @@ export default function DataIngestionSection() {
                   </div>
                 </div>
                 {ds.uploadedAt && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-zinc-500 mt-1">
                     Uploaded {ds.uploadedAt.toLocaleDateString()}
                   </p>
                 )}
@@ -793,17 +793,17 @@ export default function DataIngestionSection() {
 
       {fitsResults.length > 0 && (
         <div className="mt-8">
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">FITS Previews (read-only)</h3>
-          <p className="text-sm text-slate-600 mb-4">Each HDU is its own card. Preview images are auto-scaled; metadata is collapsible.</p>
+          <h3 className="text-lg font-semibold text-zinc-100 mb-2">FITS Previews (read-only)</h3>
+          <p className="text-sm text-zinc-400 mb-4">Each HDU is its own card. Preview images are auto-scaled; metadata is collapsible.</p>
           <div className="space-y-6">
             {fitsResults.map((result, resultIdx) => (
-              <Card key={resultIdx} className="p-6 border border-slate-200 overflow-hidden">
+              <Card key={resultIdx} className="p-6 bg-zinc-800 border-zinc-700 overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-medium text-slate-800">{result.fileName}</h4>
+                  <h4 className="font-medium text-zinc-100">{result.fileName}</h4>
                   <button
                     type="button"
                     onClick={() => handleRemoveFitsResult(resultIdx)}
-                    className="text-slate-400 hover:text-red-600 transition-colors p-1"
+                    className="text-zinc-500 hover:text-red-400 transition-colors p-1"
                     title="Remove FITS preview"
                     aria-label="Remove FITS preview"
                   >
@@ -811,19 +811,19 @@ export default function DataIngestionSection() {
                   </button>
                 </div>
                 {result.status === "valid_no_visualizable_data" && (result.message ?? result.error) && (
-                  <Alert className="bg-blue-50 border-blue-200 mb-4">
-                    <AlertDescription className="text-blue-800">
+                  <Alert className="bg-blue-900/30 border-blue-800 mb-4">
+                    <AlertDescription className="text-blue-300">
                       ℹ️ {result.message ?? result.error ?? "This FITS file is valid but contains no visualizable data products."}
                     </AlertDescription>
                   </Alert>
                 )}
                 <div className="space-y-4">
                   {result.hdus.map((hdu) => (
-                    <div key={hdu.index} className="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                    <div key={hdu.index} className="border border-zinc-700 rounded-lg p-4 bg-zinc-900/50">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className="text-sm font-medium text-slate-700">HDU {hdu.index}</span>
-                        <span className="text-xs text-slate-500">{hdu.type}</span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                        <span className="text-sm font-medium text-zinc-200">HDU {hdu.index}</span>
+                        <span className="text-xs text-zinc-400">{hdu.type}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-zinc-700 text-zinc-300">
                           {hdu.classification === "error_map"
                             ? "Error Map"
                             : hdu.classification === "low_contrast_image"
@@ -838,22 +838,22 @@ export default function DataIngestionSection() {
                           <img
                             src={hdu.previewImage}
                             alt={`HDU ${hdu.index} preview`}
-                            className="max-w-full max-h-64 object-contain rounded border border-slate-200"
+                            className="max-w-full max-h-64 object-contain rounded border border-zinc-700"
                           />
-                          <p className="text-xs text-slate-500 mt-1 font-mono" title="ZScale and percentile scaling are used to auto-enhance contrast for display; data values are unchanged.">
+                          <p className="text-xs text-zinc-500 mt-1 font-mono" title="ZScale and percentile scaling are used to auto-enhance contrast for display; data values are unchanged.">
             Stretch: Auto (ZScale/percentile). Contrast auto-enhanced for visibility.
           </p>
                         </div>
                       )}
                       {Object.keys(hdu.units).length > 0 && (
-                        <p className="text-xs text-slate-600 mb-1">
+                        <p className="text-xs text-zinc-400 mb-1">
                           Units: {Object.entries(hdu.units).map(([k, v]) => `${k}=${v}`).join(", ")}
                         </p>
                       )}
                       {Object.keys(hdu.metadata).length > 0 && (
-                        <details className="text-xs text-slate-600">
-                          <summary className="cursor-pointer">Header metadata</summary>
-                          <pre className="mt-1 p-2 bg-white rounded border border-slate-100 overflow-auto max-h-32">
+                        <details className="text-xs text-zinc-400">
+                          <summary className="cursor-pointer hover:text-zinc-200">Header metadata</summary>
+                          <pre className="mt-1 p-2 bg-zinc-900 rounded border border-zinc-700 overflow-auto max-h-32 text-zinc-300">
                             {JSON.stringify(hdu.metadata, null, 2)}
                           </pre>
                         </details>

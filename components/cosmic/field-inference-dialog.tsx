@@ -52,13 +52,13 @@ export function FieldInferenceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-zinc-900 border-zinc-700 text-zinc-100">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Brain className="w-5 h-5 text-blue-600" />
+          <DialogTitle className="flex items-center gap-2 text-xl text-zinc-100">
+            <Brain className="w-5 h-5 text-blue-400" />
             AI Field Mapping Suggestions
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-zinc-400">
             The AI has analyzed your astronomical data and suggests field name mappings and units.
             Please review and confirm before applying.
           </DialogDescription>
@@ -68,9 +68,9 @@ export function FieldInferenceDialog({
           {llmInferences.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                <h3 className="font-semibold text-slate-900">LLM-Assisted Inferences</h3>
-                <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <h3 className="font-semibold text-zinc-100">LLM-Assisted Inferences</h3>
+                <Badge variant="secondary" className="bg-purple-900/50 text-purple-300 border-purple-700">
                   {llmInferences.length} fields
                 </Badge>
               </div>
@@ -78,33 +78,33 @@ export function FieldInferenceDialog({
                 {llmInferences.map((inf, idx) => (
                   <div
                     key={idx}
-                    className="p-4 border border-purple-200 rounded-lg bg-purple-50/50 hover:bg-purple-50 transition-colors"
+                    className="p-4 border border-purple-800 rounded-lg bg-purple-900/20 hover:bg-purple-900/30 transition-colors"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-sm font-semibold text-slate-900">
+                          <span className="font-mono text-sm font-semibold text-zinc-100">
                             {inf.fieldName}
                           </span>
-                          <span className="text-slate-400">→</span>
+                          <span className="text-zinc-500">→</span>
                           {inf.suggestedCanonicalField ? (
-                            <Badge variant="outline" className="bg-white">
+                            <Badge variant="outline" className="bg-zinc-800 border-zinc-600 text-zinc-200">
                               {inf.suggestedCanonicalField}
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="bg-white text-slate-500">
+                            <Badge variant="outline" className="bg-zinc-800 border-zinc-600 text-zinc-500">
                               (keep original)
                             </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-500">Unit:</span>
+                          <span className="text-xs text-zinc-500">Unit:</span>
                           <Badge
                             variant="secondary"
                             className={
                               inf.suggestedUnit === "unknown"
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-blue-100 text-blue-700"
+                                ? "bg-yellow-900/50 text-yellow-300 border-yellow-700"
+                                : "bg-blue-900/50 text-blue-300 border-blue-700"
                             }
                           >
                             {inf.suggestedUnit}
@@ -113,10 +113,10 @@ export function FieldInferenceDialog({
                             variant="outline"
                             className={
                               inf.confidence >= 0.8
-                                ? "bg-green-50 text-green-700 border-green-300"
+                                ? "bg-emerald-900/30 text-emerald-300 border-emerald-700"
                                 : inf.confidence >= 0.6
-                                ? "bg-yellow-50 text-yellow-700 border-yellow-300"
-                                : "bg-red-50 text-red-700 border-red-300"
+                                ? "bg-yellow-900/30 text-yellow-300 border-yellow-700"
+                                : "bg-red-900/30 text-red-300 border-red-700"
                             }
                           >
                             {(inf.confidence * 100).toFixed(0)}% confidence
@@ -124,7 +124,7 @@ export function FieldInferenceDialog({
                         </div>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-600 mt-2 italic">{inf.reasoning}</p>
+                    <p className="text-xs text-zinc-400 mt-2 italic">{inf.reasoning}</p>
                   </div>
                 ))}
               </div>
@@ -134,9 +134,9 @@ export function FieldInferenceDialog({
           {ruleInferences.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <CheckCircle2 className="w-4 h-4 text-green-600" />
-                <h3 className="font-semibold text-slate-900">Rule-Based Mappings</h3>
-                <Badge variant="secondary" className="bg-green-100 text-green-700">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-semibold text-zinc-100">Rule-Based Mappings</h3>
+                <Badge variant="secondary" className="bg-emerald-900/50 text-emerald-300 border-emerald-700">
                   {ruleInferences.length} fields
                 </Badge>
               </div>
@@ -144,19 +144,19 @@ export function FieldInferenceDialog({
                 {ruleInferences.map((inf, idx) => (
                   <div
                     key={idx}
-                    className="p-3 border border-green-200 rounded-lg bg-green-50/30 hover:bg-green-50/50 transition-colors"
+                    className="p-3 border border-emerald-800 rounded-lg bg-emerald-900/20 hover:bg-emerald-900/30 transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm text-slate-700">{inf.fieldName}</span>
-                      <span className="text-slate-400">→</span>
+                      <span className="font-mono text-sm text-zinc-300">{inf.fieldName}</span>
+                      <span className="text-zinc-500">→</span>
                       {inf.suggestedCanonicalField ? (
-                        <Badge variant="outline" className="bg-white">
+                        <Badge variant="outline" className="bg-zinc-800 border-zinc-600 text-zinc-200">
                           {inf.suggestedCanonicalField}
                         </Badge>
                       ) : (
-                        <span className="text-xs text-slate-500">(no mapping)</span>
+                        <span className="text-xs text-zinc-500">(no mapping)</span>
                       )}
-                      <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-xs">
+                      <Badge variant="secondary" className="bg-blue-900/50 text-blue-300 border-blue-700 text-xs">
                         {inf.suggestedUnit}
                       </Badge>
                     </div>
@@ -167,9 +167,9 @@ export function FieldInferenceDialog({
           )}
 
           {llmInferences.length > 0 && (
-            <Alert className="bg-blue-50 border-blue-200">
-              <AlertCircle className="h-4 w-4 text-blue-600" />
-              <AlertDescription className="text-blue-800">
+            <Alert className="bg-blue-900/30 border-blue-800">
+              <AlertCircle className="h-4 w-4 text-blue-400" />
+              <AlertDescription className="text-blue-300">
                 <strong>Note:</strong> LLM suggestions require your validation. Review the field
                 mappings and units carefully before confirming. You can modify or reject any
                 suggestions.
@@ -178,11 +178,11 @@ export function FieldInferenceDialog({
           )}
         </div>
 
-        <DialogFooter className="flex gap-2">
-          <Button variant="outline" onClick={handleReject}>
+        <DialogFooter className="flex gap-2 border-t border-zinc-700 pt-4">
+          <Button variant="outline" onClick={handleReject} className="border-zinc-600 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
             Reject All
           </Button>
-          <Button onClick={handleConfirm} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={handleConfirm} className="bg-blue-600 hover:bg-blue-700 text-white">
             <CheckCircle2 className="w-4 h-4 mr-2" />
             Confirm & Apply
           </Button>

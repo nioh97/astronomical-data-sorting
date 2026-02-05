@@ -99,36 +99,36 @@ function ProgressSteps({ steps }: ProgressStepsProps) {
           key={`progress-step-${step.id}-${idx}`}
           className={`flex items-center gap-3 p-2 rounded transition-colors ${
             step.status === "active" 
-              ? "bg-indigo-50 border border-indigo-200" 
+              ? "bg-indigo-900/30 border border-indigo-700" 
               : step.status === "complete"
-                ? "bg-green-50/50"
+                ? "bg-emerald-900/20"
                 : step.status === "error"
-                  ? "bg-red-50/50"
-                  : "bg-slate-50/50"
+                  ? "bg-red-900/20"
+                  : "bg-zinc-800/50"
           }`}
         >
           <div className="w-5 h-5 flex items-center justify-center">
             {step.status === "active" && (
-              <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+              <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
             )}
             {step.status === "complete" && (
-              <CheckCircle2 className="w-4 h-4 text-green-600" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             )}
             {step.status === "error" && (
-              <XCircle className="w-4 h-4 text-red-600" />
+              <XCircle className="w-4 h-4 text-red-400" />
             )}
             {step.status === "pending" && (
-              <div className="w-2 h-2 rounded-full bg-slate-300" />
+              <div className="w-2 h-2 rounded-full bg-zinc-600" />
             )}
           </div>
           <span className={`text-sm ${
             step.status === "active" 
-              ? "text-indigo-700 font-medium" 
+              ? "text-indigo-300 font-medium" 
               : step.status === "complete"
-                ? "text-green-700"
+                ? "text-emerald-300"
                 : step.status === "error"
-                  ? "text-red-700"
-                  : "text-slate-500"
+                  ? "text-red-300"
+                  : "text-zinc-500"
           }`}>
             {step.label}
           </span>
@@ -345,7 +345,7 @@ function DatasetSelector({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-700">
+        <span className="text-sm font-medium text-zinc-300">
           Select Datasets ({selectedCount} of {selections.length})
         </span>
         <div className="flex gap-2">
@@ -354,6 +354,7 @@ function DatasetSelector({
             size="sm"
             onClick={onSelectAll}
             disabled={disabled || selectedCount === selections.length}
+            className="border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
           >
             Select All
           </Button>
@@ -362,6 +363,7 @@ function DatasetSelector({
             size="sm"
             onClick={onClearAll}
             disabled={disabled || selectedCount === 0}
+            className="border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
           >
             Clear
           </Button>
@@ -374,8 +376,8 @@ function DatasetSelector({
             key={`ai-select-${selection.datasetId}-${index}`}
             className={`flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
               selection.selected 
-                ? "bg-indigo-50 border-indigo-200" 
-                : "bg-white border-slate-200 hover:border-slate-300"
+                ? "bg-indigo-900/30 border-indigo-700" 
+                : "bg-zinc-800 border-zinc-700 hover:border-zinc-600"
             }`}
           >
             <Checkbox
@@ -387,15 +389,15 @@ function DatasetSelector({
             <div className="flex-1 min-w-0">
               <label
                 htmlFor={`ai-checkbox-${selection.datasetId}`}
-                className="text-sm font-medium text-slate-900 cursor-pointer truncate block"
+                className="text-sm font-medium text-zinc-100 cursor-pointer truncate block"
               >
                 {selection.datasetName}
               </label>
               <div className="flex gap-3 mt-1">
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-zinc-500">
                   {selection.rowCount.toLocaleString()} rows
                 </span>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-zinc-500">
                   {selection.numericColumns} numeric fields
                 </span>
               </div>
@@ -404,7 +406,7 @@ function DatasetSelector({
         ))}
         
         {selections.length === 0 && (
-          <div className="text-center py-8 text-slate-500">
+          <div className="text-center py-8 text-zinc-500">
             <Database className="w-10 h-10 mx-auto mb-2 opacity-40" />
             <p className="text-sm">No datasets available</p>
             <p className="text-xs mt-1">Upload data to the Unified Repository first</p>
@@ -1185,16 +1187,16 @@ export function AIDiscoveryPanel() {
   
   // Render
   return (
-    <Card className="w-full border-indigo-200">
-      <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-100">
+    <Card className="w-full border-zinc-700 bg-zinc-900">
+      <CardHeader className="bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 rounded-lg">
-              <Brain className="w-5 h-5 text-indigo-600" />
+            <div className="p-2 bg-indigo-900/50 rounded-lg">
+              <Brain className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
-              <CardTitle className="text-lg">AI-Assisted Discovery</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg text-zinc-100">AI-Assisted Discovery</CardTitle>
+              <CardDescription className="text-zinc-400">
                 Select datasets and run AI-powered insights
               </CardDescription>
             </div>

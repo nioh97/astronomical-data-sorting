@@ -1,25 +1,76 @@
 "use client"
 
-/**
- * UX4G canonical layout: Top Status Bar | Stage Navigator + Active Stage Panel | Evidence Drawer
- */
-
-import Header from "@/components/cosmic/header"
-import OverviewSection from "@/components/cosmic/overview-section"
-import CanonicalSchemaSection from "@/components/cosmic/canonical-schema"
+import { useState, useCallback } from "react"
+import { DashboardLayout } from "@/components/dashboard"
+import { HomeSection } from "@/components/dashboard/sections/home-section"
 import DataIngestionSection from "@/components/cosmic/data-ingestion"
-import StandardizationSection from "@/components/cosmic/standardization"
 import UnifiedRepositorySection from "@/components/cosmic/unified-repository"
 import VisualizationSection from "@/components/cosmic/visualization"
 import InsightsSection from "@/components/cosmic/insights"
-import Footer from "@/components/cosmic/footer"
-import TopStatusBar from "@/components/cosmic/ux4g/top-status-bar"
-import StageNavigator from "@/components/cosmic/ux4g/stage-navigator"
-import EvidenceDrawer from "@/components/cosmic/ux4g/evidence-drawer"
-import { DataProvider } from "@/lib/data-context"
+import { DataProvider, useDataContext } from "@/lib/data-context"
 import { FilterProvider } from "@/lib/filters/filter-context"
 import { AppUIProvider } from "@/lib/app-ui-context"
 import ProtectedRoute from "@/components/auth/protected-route"
+
+function DashboardContent() {
+  const [activeSection, setActiveSection] = useState("home")
+  const { datasets } = useDataContext()
+  
+  // Compute total row count from all datasets
+  const totalRowCount = datasets.reduce((sum, ds) => sum + ds.rows.length, 0)
+  
+  const handleSectionChange = useCallback((section: string) => {
+    setActiveSection(section)
+  }, [])
+
+  // Helper to determine visibility - component stays mounted but hidden
+  const sectionClass = (section: string) => 
+    activeSection === section ? "block" : "hidden"
+
+  return (
+    <DashboardLayout
+      activeSection={activeSection}
+      onSectionChange={handleSectionChange}
+    >
+      {/* Home section - conditionally rendered (no persistent state needed) */}
+      {activeSection === "home" && (
+        <HomeSection 
+          onNavigate={handleSectionChange}
+          datasetCount={datasets.length}
+          rowCount={totalRowCount}
+        />
+      )}
+      
+      {/* Upload section - ALWAYS MOUNTED to persist upload/processing state */}
+      <div className={sectionClass("upload")}>
+        <div className="space-y-6">
+          <DataIngestionSection />
+        </div>
+      </div>
+      
+      {/* Repository section - conditionally rendered */}
+      {activeSection === "repository" && (
+        <div className="space-y-6">
+          <UnifiedRepositorySection />
+        </div>
+      )}
+      
+      {/* Visualization section - conditionally rendered */}
+      {activeSection === "visualization" && (
+        <div className="space-y-6">
+          <VisualizationSection />
+        </div>
+      )}
+      
+      {/* AI Discovery section - conditionally rendered */}
+      {activeSection === "ai-discovery" && (
+        <div className="space-y-6">
+          <InsightsSection />
+        </div>
+      )}
+    </DashboardLayout>
+  )
+}
 
 export default function AppPage() {
   return (
@@ -27,28 +78,7 @@ export default function AppPage() {
       <DataProvider>
         <FilterProvider>
           <AppUIProvider>
-            <main className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-              <div className="sticky top-0 z-40 bg-slate-50 shrink-0">
-                <Header />
-                <TopStatusBar />
-              </div>
-              <div className="flex flex-1 min-h-0">
-                <StageNavigator />
-                <div className="flex-1 overflow-auto">
-                  <div className="container mx-auto px-4 py-8 space-y-12 max-w-5xl">
-                    <OverviewSection />
-                    <CanonicalSchemaSection />
-                    <DataIngestionSection />
-                    <StandardizationSection />
-                    <UnifiedRepositorySection />
-                    <VisualizationSection />
-                    <InsightsSection />
-                  </div>
-                </div>
-              </div>
-              <EvidenceDrawer />
-              <Footer />
-            </main>
+            <DashboardContent />
           </AppUIProvider>
         </FilterProvider>
       </DataProvider>

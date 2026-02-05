@@ -4,7 +4,7 @@ export default function OverviewSection() {
       <h2 className="text-3xl font-bold text-slate-900 mb-6">Platform Overview</h2>
       <div className="prose prose-slate max-w-none">
         <p className="text-slate-700 leading-relaxed text-lg mb-4">
-          COSMIC Data Fusion is a cloud-enabled platform designed to unify astronomical datasets from multiple space agencies and observatories. 
+          SKYSCRIBE Data Fusion is a cloud-enabled platform designed to unify astronomical datasets from multiple space agencies and observatories. 
           The system addresses the critical challenge of data fragmentation by providing automated ingestion, standardization, and harmonization 
           of heterogeneous astronomical data.
         </p>

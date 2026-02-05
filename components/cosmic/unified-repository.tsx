@@ -66,17 +66,17 @@ function DatasetTable({
   const isFiltered = filterResult.filteredRows < filterResult.totalRows
 
   return (
-    <Card className="border-slate-200 overflow-hidden">
+    <Card className="border-zinc-700 bg-zinc-900 overflow-hidden">
       {/* Dataset Header */}
-      <div className="p-4 border-b border-slate-200 bg-slate-50">
+      <div className="p-4 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">{dataset.name}</h3>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 mt-1">
+            <h3 className="text-lg font-semibold text-zinc-100">{dataset.name}</h3>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400 mt-1">
               <span>
                 {isFiltered ? (
                   <>
-                    <span className="font-medium text-blue-600">
+                    <span className="font-medium text-blue-400">
                       {filterResult.filteredRows.toLocaleString()}
                     </span>
                     {" / "}
@@ -86,28 +86,28 @@ function DatasetTable({
                   <>{filterResult.totalRows.toLocaleString()} rows</>
                 )}
               </span>
-              <span className="text-slate-300">•</span>
+              <span className="text-zinc-600">•</span>
               <span>{dataset.columns.length} columns</span>
-              <span className="text-slate-300">•</span>
-              <span className="text-xs text-slate-500">Source: {dataset.sourceFile}</span>
+              <span className="text-zinc-600">•</span>
+              <span className="text-xs text-zinc-500">Source: {dataset.sourceFile}</span>
             </div>
           </div>
 
           {/* Export dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1">
+              <Button variant="outline" size="sm" className="gap-1 border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100">
                 <Download className="h-4 w-4" />
                 Export
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onExportFiltered(dataset, "csv")}>
+            <DropdownMenuContent align="end" className="bg-zinc-800 border-zinc-700">
+              <DropdownMenuItem onClick={() => onExportFiltered(dataset, "csv")} className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">
                 <FileText className="h-4 w-4 mr-2" />
                 {isFiltered ? "Export Filtered (CSV)" : "Export All (CSV)"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExportFiltered(dataset, "json")}>
+              <DropdownMenuItem onClick={() => onExportFiltered(dataset, "json")} className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">
                 <FileJson className="h-4 w-4 mr-2" />
                 {isFiltered ? "Export Filtered (JSON)" : "Export All (JSON)"}
               </DropdownMenuItem>
@@ -117,13 +117,13 @@ function DatasetTable({
       </div>
 
       {/* Filter Panel */}
-      <div className="p-4 border-b border-slate-100">
+      <div className="p-4 border-b border-zinc-800">
         <FilterPanel dataset={dataset} />
       </div>
 
       {/* Active Filter Chips */}
       {hasFilters && (
-        <div className="px-4 py-2 border-b border-slate-100 bg-blue-50/50">
+        <div className="px-4 py-2 border-b border-zinc-800 bg-blue-900/20">
           <FilterChips dataset={dataset} showStats={false} />
         </div>
       )}
@@ -132,12 +132,12 @@ function DatasetTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50">
-              <th className="text-left py-2 px-3 text-slate-500 font-medium w-12">#</th>
+            <tr className="border-b border-zinc-700 bg-zinc-800">
+              <th className="text-left py-2 px-3 text-zinc-500 font-medium w-12">#</th>
               {dataset.columns.map((column, colIdx) => (
                 <th
                   key={`col-header-${dataset.id}-${column.name}-${colIdx}`}
-                  className="text-left py-2 px-3 text-slate-900 font-semibold"
+                  className="text-left py-2 px-3 text-zinc-200 font-semibold"
                 >
                   <div className="flex flex-col gap-1">
                     <ColumnHeaderTooltip
@@ -147,7 +147,7 @@ function DatasetTable({
                       description={column.description}
                       displayText={getHeaderLabel(column)}
                     />
-                    <Badge variant="outline" className="text-xs w-fit">
+                    <Badge variant="outline" className="text-xs w-fit border-zinc-600 text-zinc-400">
                       {column.semanticType || "unknown"}
                     </Badge>
                   </div>
@@ -160,7 +160,7 @@ function DatasetTable({
               <tr>
                 <td
                   colSpan={dataset.columns.length + 1}
-                  className="py-12 text-center text-slate-500"
+                  className="py-12 text-center text-zinc-500"
                 >
                   {isFiltered
                     ? "No rows match the current filters"
@@ -173,13 +173,13 @@ function DatasetTable({
                 return (
                   <tr
                     key={`row-${dataset.id}-${rowKey}`}
-                    className="border-b border-slate-100 hover:bg-slate-50 transition"
+                    className="border-b border-zinc-800 hover:bg-zinc-800/50 transition"
                   >
-                    <td className="py-2 px-3 text-slate-400 text-xs">
+                    <td className="py-2 px-3 text-zinc-500 text-xs">
                       {rowKey + 1}
                     </td>
                     {dataset.columns.map((column, colIdx) => (
-                      <td key={`cell-${dataset.id}-${rowKey}-${column.name}-${colIdx}`} className="py-2 px-3 text-slate-600">
+                      <td key={`cell-${dataset.id}-${rowKey}-${column.name}-${colIdx}`} className="py-2 px-3 text-zinc-300">
                         {getDisplayValue(row, column.name, column)}
                       </td>
                     ))}
@@ -193,14 +193,14 @@ function DatasetTable({
 
       {/* Show more rows button */}
       {!showAllRows && filteredRows.length > MAX_VISIBLE_ROWS && (
-        <div className="p-4 border-t border-slate-100 text-center">
+        <div className="p-4 border-t border-zinc-800 text-center">
           <Button
             variant="ghost"
             onClick={() => setShowAllRows(true)}
-            className="text-sm text-slate-600"
+            className="text-sm text-zinc-400 hover:text-zinc-100"
           >
             Show all {filteredRows.length.toLocaleString()} rows
-            <span className="ml-1 text-slate-400">
+            <span className="ml-1 text-zinc-500">
               (currently showing {MAX_VISIBLE_ROWS})
             </span>
           </Button>
@@ -387,23 +387,23 @@ export default function UnifiedRepositorySection() {
 
   return (
     <section
-      className="space-y-6 bg-white rounded-lg border border-slate-200 p-6 shadow-sm"
+      className="space-y-6 bg-zinc-900 rounded-lg border border-zinc-700 p-6"
       aria-labelledby="stage-repository-title"
     >
       <div>
-        <h2 id="stage-repository-title" className="text-xl font-semibold text-slate-900 mb-1">
+        <h2 id="stage-repository-title" className="text-xl font-semibold text-zinc-100 mb-1">
           Repository
         </h2>
-        <p className="text-sm text-slate-600 mb-4">
+        <p className="text-sm text-zinc-400 mb-4">
           Query and filter your unified datasets. Export filtered results when needed.
         </p>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-600">
+          <span className="text-sm text-zinc-400">
             {datasets.length} dataset{datasets.length !== 1 ? "s" : ""}
             {stats.isFiltered ? (
               <>
                 {" • "}
-                <span className="text-blue-600 font-medium">
+                <span className="text-blue-400 font-medium">
                   {stats.filteredRows.toLocaleString()}
                 </span>
                 {" / "}
@@ -414,7 +414,7 @@ export default function UnifiedRepositorySection() {
             )}
           </span>
           {datasets.length > 1 && (
-            <Button variant="outline" size="sm" onClick={handleExportAll} className="gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportAll} className="gap-2 border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100">
               <Download className="w-4 h-4" />
               Export All
             </Button>
@@ -423,8 +423,8 @@ export default function UnifiedRepositorySection() {
       </div>
 
       {datasets.length === 0 ? (
-        <Card className="p-12 border-slate-200 text-center">
-          <p className="text-slate-500">No datasets uploaded yet. Upload a file to get started.</p>
+        <Card className="p-12 border-zinc-700 bg-zinc-800 text-center">
+          <p className="text-zinc-400">No datasets uploaded yet. Upload a file to get started.</p>
         </Card>
       ) : (
         <div className="space-y-6">

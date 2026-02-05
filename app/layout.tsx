@@ -6,29 +6,21 @@ import { AuthProvider } from "@/lib/auth-context"
 import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 
-const _geist = Geist({ subsets: ["latin"] })
-const _geistMono = Geist_Mono({ subsets: ["latin"] })
+const geistSans = Geist({ 
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+})
+const geistMono = Geist_Mono({ 
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+})
 
 export const metadata: Metadata = {
-  title: "COSMIC Data Fusion - Astronomical Data Processing Platform",
+  title: "SKYSCRIBE Data Fusion - Astronomical Data Analysis Platform",
   description:
-    "Unified research platform demonstrating data fusion of heterogeneous astronomical datasets from multiple space agencies",
-  generator: "v0.app",
+    "Scientific research platform for astronomical data fusion, analysis, and AI-assisted discovery",
   icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
+    icon: "/icon-dark-32x32.png",
     apple: "/apple-icon.png",
   },
 }
@@ -39,8 +31,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`font-sans antialiased`}>
+    // FORCE DARK MODE GLOBALLY - No theme toggle
+    <html lang="en" className="dark">
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased bg-background text-foreground`}>
         <AuthProvider>
           {children}
           <Toaster />

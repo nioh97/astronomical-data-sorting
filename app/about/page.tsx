@@ -11,7 +11,7 @@ export default function AboutPage() {
         {/* Hero Section */}
         <section className="text-center py-12">
           <h1 className="text-4xl md:text-5xl font-bold text-slate-900 mb-4">
-            About COSMIC Data Fusion
+            About SKYSCRIBE Data Fusion
           </h1>
           <p className="text-xl text-slate-600 max-w-3xl mx-auto">
             We are dedicated to revolutionizing astronomical data processing through innovative 

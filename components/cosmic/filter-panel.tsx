@@ -119,14 +119,14 @@ function NumericFilterEditor({
   const label = column.unit ? `${column.name} (${column.unit})` : column.name
 
   return (
-    <div className="space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+    <div className="space-y-2 p-3 bg-zinc-800 rounded-lg border border-zinc-700">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium text-slate-700">{label}</Label>
+        <Label className="text-sm font-medium text-zinc-300">{label}</Label>
         <Button
           variant="ghost"
           size="sm"
           onClick={onRemove}
-          className="h-6 w-6 p-0 text-slate-400 hover:text-red-500"
+          className="h-6 w-6 p-0 text-zinc-500 hover:text-red-400"
         >
           <X className="h-4 w-4" />
         </Button>
@@ -137,19 +137,19 @@ function NumericFilterEditor({
           placeholder={column.minValue?.toFixed(2) ?? "Min"}
           value={minInput}
           onChange={(e) => handleMinChange(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
         />
-        <span className="text-slate-400">–</span>
+        <span className="text-zinc-500">–</span>
         <Input
           type="number"
           placeholder={column.maxValue?.toFixed(2) ?? "Max"}
           value={maxInput}
           onChange={(e) => handleMaxChange(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
         />
       </div>
       {column.minValue !== undefined && column.maxValue !== undefined && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-zinc-500">
           Range: {column.minValue.toExponential(2)} – {column.maxValue.toExponential(2)}
         </p>
       )}
@@ -195,14 +195,14 @@ function CategoricalFilterEditor({
   }, [onUpdate])
 
   return (
-    <div className="space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+    <div className="space-y-2 p-3 bg-zinc-800 rounded-lg border border-zinc-700">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium text-slate-700">{column.name}</Label>
+        <Label className="text-sm font-medium text-zinc-300">{column.name}</Label>
         <Button
           variant="ghost"
           size="sm"
           onClick={onRemove}
-          className="h-6 w-6 p-0 text-slate-400 hover:text-red-500"
+          className="h-6 w-6 p-0 text-zinc-500 hover:text-red-400"
         >
           <X className="h-4 w-4" />
         </Button>
@@ -214,25 +214,25 @@ function CategoricalFilterEditor({
           placeholder="Search values..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
         />
       )}
 
       <div className="flex gap-2 text-xs">
         <button
           onClick={handleSelectAll}
-          className="text-blue-600 hover:underline"
+          className="text-blue-400 hover:underline"
         >
           Select all
         </button>
-        <span className="text-slate-300">|</span>
+        <span className="text-zinc-600">|</span>
         <button
           onClick={handleSelectNone}
-          className="text-blue-600 hover:underline"
+          className="text-blue-400 hover:underline"
         >
           Clear
         </button>
-        <span className="text-slate-400 ml-auto">
+        <span className="text-zinc-500 ml-auto">
           {filter.selectedValues.length} / {column.uniqueCount ?? 0}
         </span>
       </div>
@@ -247,7 +247,7 @@ function CategoricalFilterEditor({
             />
             <label
               htmlFor={`${filter.id}_${value}`}
-              className="text-sm text-slate-600 cursor-pointer truncate"
+              className="text-sm text-zinc-400 cursor-pointer truncate"
               title={value}
             >
               {value}
@@ -294,14 +294,14 @@ function TemporalFilterEditor({
   const currentYear = new Date().getFullYear()
 
   return (
-    <div className="space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+    <div className="space-y-2 p-3 bg-zinc-800 rounded-lg border border-zinc-700">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium text-slate-700">{column.name}</Label>
+        <Label className="text-sm font-medium text-zinc-300">{column.name}</Label>
         <Button
           variant="ghost"
           size="sm"
           onClick={onRemove}
-          className="h-6 w-6 p-0 text-slate-400 hover:text-red-500"
+          className="h-6 w-6 p-0 text-zinc-500 hover:text-red-400"
         >
           <X className="h-4 w-4" />
         </Button>
@@ -312,15 +312,15 @@ function TemporalFilterEditor({
           placeholder="From year"
           value={fromInput}
           onChange={(e) => handleFromChange(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
         />
-        <span className="text-slate-400">–</span>
+        <span className="text-zinc-500">–</span>
         <Input
           type="number"
           placeholder="To year"
           value={toInput}
           onChange={(e) => handleToChange(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
         />
       </div>
       <div className="flex gap-2 text-xs">
@@ -330,7 +330,7 @@ function TemporalFilterEditor({
             setFromInput((currentYear - 5).toString())
             setToInput(currentYear.toString())
           }}
-          className="text-blue-600 hover:underline"
+          className="text-blue-400 hover:underline"
         >
           Last 5 years
         </button>
@@ -340,7 +340,7 @@ function TemporalFilterEditor({
             setFromInput((currentYear - 10).toString())
             setToInput(currentYear.toString())
           }}
-          className="text-blue-600 hover:underline"
+          className="text-blue-400 hover:underline"
         >
           Last decade
         </button>
@@ -393,11 +393,11 @@ function SpatialFilterEditor({
   const rangeLabel = isRA ? "0° – 360°" : "−90° – +90°"
 
   return (
-    <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
+    <div className="space-y-2 p-3 bg-emerald-900/20 rounded-lg border border-emerald-800">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium text-green-800">
+        <Label className="text-sm font-medium text-emerald-300">
           {label}
-          <Badge variant="outline" className="ml-2 text-xs bg-green-100 text-green-700">
+          <Badge variant="outline" className="ml-2 text-xs bg-emerald-900/50 text-emerald-300 border-emerald-700">
             Spatial
           </Badge>
         </Label>
@@ -405,7 +405,7 @@ function SpatialFilterEditor({
           variant="ghost"
           size="sm"
           onClick={onRemove}
-          className="h-6 w-6 p-0 text-slate-400 hover:text-red-500"
+          className="h-6 w-6 p-0 text-zinc-500 hover:text-red-400"
         >
           <X className="h-4 w-4" />
         </Button>
@@ -416,23 +416,23 @@ function SpatialFilterEditor({
           placeholder={`Min (${defaultMin})`}
           value={minInput}
           onChange={(e) => handleMinChange(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
           min={defaultMin}
           max={defaultMax}
         />
-        <span className="text-slate-400">–</span>
+        <span className="text-zinc-500">–</span>
         <Input
           type="number"
           placeholder={`Max (${defaultMax})`}
           value={maxInput}
           onChange={(e) => handleMaxChange(e.target.value)}
-          className="h-8 text-sm"
+          className="h-8 text-sm bg-zinc-900 border-zinc-600 text-zinc-100"
           min={defaultMin}
           max={defaultMax}
         />
-        <span className="text-xs text-slate-500">deg</span>
+        <span className="text-xs text-zinc-500">deg</span>
       </div>
-      <p className="text-xs text-green-700">
+      <p className="text-xs text-emerald-400">
         Valid range: {rangeLabel}
       </p>
     </div>
@@ -517,38 +517,38 @@ function AddFilterDropdown({ meta, onAdd, existingColumns }: AddFilterDropdownPr
   }, [category, numericCols, categoricalCols, temporalCols, meta.columnMeta])
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-2 bg-white rounded-lg border border-dashed border-slate-300">
+    <div className="flex flex-wrap items-center gap-2 p-2 bg-zinc-800/50 rounded-lg border border-dashed border-zinc-600">
       <Select value={category} onValueChange={(v) => {
         setCategory(v as FilterCategory)
         setSelectedColumn("")
       }}>
-        <SelectTrigger className="h-8 w-32 text-sm">
+        <SelectTrigger className="h-8 w-32 text-sm bg-zinc-900 border-zinc-600 text-zinc-100">
           <SelectValue placeholder="Filter type" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="bg-zinc-800 border-zinc-700">
           {numericCols.length > 0 && (
-            <SelectItem value="numeric">Numeric</SelectItem>
+            <SelectItem value="numeric" className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">Numeric</SelectItem>
           )}
           {categoricalCols.length > 0 && (
-            <SelectItem value="categorical">Category</SelectItem>
+            <SelectItem value="categorical" className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">Category</SelectItem>
           )}
           {temporalCols.length > 0 && (
-            <SelectItem value="temporal">Time/Year</SelectItem>
+            <SelectItem value="temporal" className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">Time/Year</SelectItem>
           )}
           {meta.hasSpatialColumns && (
-            <SelectItem value="spatial">Spatial</SelectItem>
+            <SelectItem value="spatial" className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">Spatial</SelectItem>
           )}
         </SelectContent>
       </Select>
 
       {category && (
         <Select value={selectedColumn} onValueChange={setSelectedColumn}>
-          <SelectTrigger className="h-8 w-40 text-sm">
+          <SelectTrigger className="h-8 w-40 text-sm bg-zinc-900 border-zinc-600 text-zinc-100">
             <SelectValue placeholder="Select column" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-zinc-800 border-zinc-700">
             {availableColumns.map((col) => (
-              <SelectItem key={col.name} value={col.name}>
+              <SelectItem key={col.name} value={col.name} className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100">
                 {col.name}
               </SelectItem>
             ))}
@@ -557,7 +557,7 @@ function AddFilterDropdown({ meta, onAdd, existingColumns }: AddFilterDropdownPr
       )}
 
       {selectedColumn && (
-        <Button size="sm" onClick={handleAddFilter} className="h-8">
+        <Button size="sm" onClick={handleAddFilter} className="h-8 bg-blue-600 hover:bg-blue-700 text-white">
           <Plus className="h-4 w-4 mr-1" />
           Add
         </Button>
@@ -608,23 +608,23 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
     <Collapsible
       open={isOpen}
       onOpenChange={setIsOpen}
-      className={`bg-white rounded-lg border border-slate-200 shadow-sm ${className}`}
+      className={`bg-zinc-900 rounded-lg border border-zinc-700 ${className}`}
     >
       <CollapsibleTrigger asChild>
-        <button className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition">
+        <button className="w-full flex items-center justify-between p-4 hover:bg-zinc-800 transition">
           <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-slate-500" />
-            <span className="font-medium text-slate-700">Filters</span>
+            <Filter className="h-4 w-4 text-zinc-500" />
+            <span className="font-medium text-zinc-300">Filters</span>
             {activeFilterCount > 0 && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="text-xs bg-blue-900/50 text-blue-300 border-blue-700">
                 {activeFilterCount} active
               </Badge>
             )}
           </div>
           {isOpen ? (
-            <ChevronUp className="h-4 w-4 text-slate-400" />
+            <ChevronUp className="h-4 w-4 text-zinc-500" />
           ) : (
-            <ChevronDown className="h-4 w-4 text-slate-400" />
+            <ChevronDown className="h-4 w-4 text-zinc-500" />
           )}
         </button>
       </CollapsibleTrigger>
@@ -633,18 +633,18 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
         <div className="px-4 pb-4 space-y-4">
           {/* Global Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
             <Input
               type="text"
               placeholder="Search all columns..."
               value={globalSearch}
               onChange={(e) => setGlobalSearch(e.target.value)}
-              className="pl-9 h-9"
+              className="pl-9 h-9 bg-zinc-800 border-zinc-600 text-zinc-100"
             />
             {globalSearch && (
               <button
                 onClick={() => setGlobalSearch("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -723,7 +723,7 @@ export function FilterPanel({ dataset, className = "" }: FilterPanelProps) {
                 variant="ghost"
                 size="sm"
                 onClick={handleClearAll}
-                className="text-slate-500 hover:text-red-500"
+                className="text-zinc-500 hover:text-red-400"
               >
                 <Trash2 className="h-4 w-4 mr-1" />
                 Clear all filters

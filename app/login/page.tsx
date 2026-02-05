@@ -50,7 +50,7 @@ export default function LoginPage() {
           <div className="w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center mx-auto mb-4">
             <span className="text-white text-2xl font-bold">C</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">COSMIC Data Fusion</h1>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">SKYSCRIBE Data Fusion</h1>
           <p className="text-slate-600">
             {isLogin ? "Sign in to access the platform" : "Create an account to get started"}
           </p>

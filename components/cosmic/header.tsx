@@ -24,7 +24,7 @@ export default function Header() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">
-                COSMIC Data Fusion
+                SKYSCRIBE Data Fusion
               </h1>
               <p className="text-slate-600 text-sm">Unified Astronomical Data Processing Platform</p>
             </div>
