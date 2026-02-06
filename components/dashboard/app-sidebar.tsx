@@ -68,6 +68,12 @@ const navigationItems = [
     icon: Brain,
     description: "Statistical insights",
   },
+  {
+    id: "university-observatory",
+    title: "University Observatory",
+    icon: Telescope,
+    description: "Institution live telemetry feed",
+  },
 ]
 
 interface AppSidebarProps {

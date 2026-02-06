@@ -1,12 +1,14 @@
 /**
  * NASA / scientific CSV field analysis. LLaMA 3.1 ONLY.
  * Phase A: Field discovery LOCAL (headers from parser; NASA # lines ignored).
- * Phase B: Semantics in batches of max 4; physicalQuantity enum enforced; fallback dimensionless.
+ * Phase B: Semantics in batches of max 4; physicalQuantity enum enforced.
+ * Fallback now uses astronomy heuristics instead of blanket "dimensionless".
  */
 
 import { callOllamaWithRetry } from "@/lib/llm-retry"
 import type { ColumnMetadataEntry } from "@/lib/file-parsers"
 import { ASTRO_FIELD_OVERRIDES } from "@/lib/domain/astro-field-map"
+import { matchFieldHeuristic } from "@/lib/astronomy-heuristics"
 
 /** Allowed physicalQuantity values. Disallow "unknown", "none", null. */
 export const PHYSICAL_QUANTITY_VALUES = [
@@ -77,40 +79,44 @@ export type QuantityEncoding = "linear" | "logarithmic" | "sexagesimal" | "categ
 
 /** Hard system prompt for field semantics. NEVER throw for invalid LLM output. */
 export const FIELD_ANALYSIS_SYSTEM = `
-You are a scientific data schema analyzer.
+You are a scientific data schema analyzer for astronomical datasets.
+
+CRITICAL: Your role is to CONFIRM and REFINE pre-inferred metadata, NOT to override it.
+When the prompt contains "HIGH CONFIDENCE" inferences, you MUST use those values exactly.
+You may ONLY classify fields marked as "LOW CONFIDENCE" or "needs classification".
 
 RULES (MANDATORY):
 1. You MUST choose physicalQuantity ONLY from:
-   count, dimensionless, time, length, mass, distance, angle, temperature, brightness, acceleration
-2. You MUST NOT invent new physical quantities.
-3. You MUST NOT infer time from distance or vice versa.
-4. You MUST set "encoding" for each field. Allowed: linear, logarithmic, sexagesimal, categorical, identifier.
-   - If a field represents a LOGARITHMIC quantity (e.g. log(g), magnitude, log flux, log10(...)), you MUST set encoding = "logarithmic", unitRequired = false.
-   - If a field contains angle values encoded as SEXAGESIMAL strings (e.g. "12h20m42.91s", "+17d47m35.71s"), you MUST set physicalQuantity = "angle", encoding = "sexagesimal", unitRequired = false.
-   Examples of sexagesimal: rastr, decstr, RA string, Dec string, any column with values like "12h20m42.91s" or "+17d47m35.71s".
-   Hard rule: sexagesimal ⇒ unitRequired = false. Logarithmic ⇒ unitRequired = false.
-5. If a column represents:
-   - counts → count, encoding: linear or categorical
-   - identifiers / flags / names → dimensionless, encoding: identifier or categorical
-   - orbital period → time, encoding: linear
-   - semi-major axis → length, encoding: linear
-   - radius → length, encoding: linear
-   - mass → mass, encoding: linear
-   - log(g), st_logg, magnitude → encoding: logarithmic, unitRequired: false
-   - rastr, decstr, RA/Dec strings (e.g. "12h20m42.91s") → physicalQuantity: angle, encoding: sexagesimal, unitRequired: false
-6. If physicalQuantity = "time", you MUST ALSO decide timeKind:
-   - "quantity" → measurable duration (orbital period, exposure time)
-   - "calendar" → date or timestamp (publication date, discovery year, release date)
-   Rules for time:
-   - Calendar dates MUST NOT be converted.
-   - Calendar dates MUST NOT require units.
-   - Calendar dates MUST be stored as ISO strings or year numbers.
-   Examples:
-   - disc_year → time + calendar
-   - pl_pubdate → time + calendar
-   - releasedate → time + calendar
-   - pl_orbper → time + quantity
-   - st_logg → encoding: logarithmic, unitRequired: false (log quantity)
+   count, dimensionless, time, length, mass, distance, angle, temperature, brightness, acceleration, velocity, frequency
+2. You MUST NOT mark numeric astronomical quantities as "dimensionless" unless they are truly unitless.
+   - RA, Dec, parallax, proper motion, magnitudes, fluxes, velocities, temperatures → NEVER dimensionless
+   - Only identifiers, flags, correlation coefficients, counts are truly dimensionless
+3. You MUST set "encoding" for each field. Allowed: linear, logarithmic, sexagesimal, categorical, identifier.
+   - LOGARITHMIC: log(g), magnitude, log flux → encoding = "logarithmic", unitRequired = false
+   - SEXAGESIMAL: RA/Dec strings like "12h20m42.91s" → encoding = "sexagesimal", unitRequired = false
+4. Common astronomy field mappings:
+   - ra, dec, l, b, glon, glat → angle (deg)
+   - pmra, pmdec → angle (mas/yr)
+   - parallax, plx → angle (mas)
+   - dist, distance → distance (pc)
+   - *_mag, gmag, bpmag → brightness (mag), logarithmic
+   - *_flux → flux, linear
+   - radial_velocity, rv → velocity (km/s)
+   - teff, temperature → temperature (K)
+   - mass → mass (M_sun or kg)
+   - radius → length (R_sun or km)
+   - *_error, *_err → same unit as base field
+   - *_id, source_id → dimensionless, identifier (LOCKED)
+   - *_flag, quality → dimensionless, categorical (LOCKED)
+   - *_correlation → dimensionless (LOCKED)
+5. If physicalQuantity = "time", decide timeKind:
+   - "quantity" → duration (orbital period) → convertible
+   - "calendar" → date/timestamp → NOT convertible
+6. Units are LOCKED (never convert) ONLY for:
+   - Identifiers (_id, source_id, name)
+   - Flags (_flag, quality)
+   - Correlation coefficients (_correlation)
+   - Counts (n_, num_, _count)
 7. Output JSON ONLY.
 
 For each field return:
@@ -118,15 +124,12 @@ For each field return:
   "name": string,
   "physicalQuantity": one of the allowed values,
   "encoding": "linear" | "logarithmic" | "sexagesimal" | "categorical" | "identifier",
-  "timeKind": "quantity" or "calendar" (REQUIRED when physicalQuantity is "time"),
-  "unitRequired": boolean (MUST be false when encoding is "logarithmic" or "sexagesimal"),
-  "recommendedUnit": one valid unit for that physicalQuantity (null for calendar time, logarithmic, or sexagesimal)
+  "timeKind": "quantity" or "calendar" (when physicalQuantity is "time"),
+  "unitRequired": boolean (false for logarithmic, sexagesimal, identifiers, flags, counts),
+  "recommendedUnit": valid unit or null
 }
 
-Example for calendar: { "name": "pl_pubdate", "physicalQuantity": "time", "timeKind": "calendar", "encoding": "linear", "unitRequired": false }
-Example for logarithmic: { "name": "st_logg", "physicalQuantity": "acceleration", "encoding": "logarithmic", "unitRequired": false, "recommendedUnit": null }
-Example for sexagesimal: { "name": "rastr", "physicalQuantity": "angle", "encoding": "sexagesimal", "unitRequired": false, "recommendedUnit": null }
-Output shape: { "fields": [ ... ] }. Optionally include "confidence": "high" or "medium" per field.
+Output shape: { "fields": [ ... ] }
 `
 
 export interface NASAFieldAnalysisColumnInput {
@@ -269,7 +272,31 @@ function normalizeField(
   }
 }
 
+/**
+ * Fallback using astronomy heuristics instead of blanket "dimensionless".
+ * This ensures common astronomical fields are properly classified even when LLM fails.
+ */
 function fallbackFieldForColumn(col: NASAFieldAnalysisColumnInput): NASAFieldAnalysisFieldOutput {
+  // Try heuristic match first
+  const heuristic = matchFieldHeuristic(col.name)
+  
+  if (heuristic && heuristic.physicalQuantity !== 'dimensionless') {
+    return {
+      name: col.name,
+      semanticType: heuristic.physicalQuantity,
+      physicalQuantity: heuristic.physicalQuantity as PhysicalQuantity,
+      suggestedUnits: heuristic.alternativeUnits,
+      recommendedUnit: heuristic.canonicalUnit !== 'unknown' ? heuristic.canonicalUnit : null,
+      unitRequired: !heuristic.isLocked && 
+        heuristic.physicalQuantity !== 'count' &&
+        heuristic.encoding !== 'logarithmic' &&
+        heuristic.encoding !== 'sexagesimal',
+      confidence: heuristic.confidence >= 0.7 ? "high" : "medium",
+      encoding: heuristic.encoding,
+    }
+  }
+  
+  // True fallback for unrecognized fields
   return {
     name: col.name,
     semanticType: "other",

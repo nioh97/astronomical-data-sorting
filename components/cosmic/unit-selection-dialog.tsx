@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Loader2 } from "lucide-react"
+import { Loader2, Lock, AlertTriangle, Pencil, ShieldCheck, Database, FileText, Activity, Bot } from "lucide-react"
 import { FieldAnalysisResult } from "@/lib/field-analysis"
 import type { ColumnMetadataEntry } from "@/lib/file-parsers"
 import { UNIT_TAXONOMY } from "@/lib/units/unitTaxonomy"
@@ -129,6 +129,60 @@ export function UnitSelectionDialog({
   const isLogarithmic = (field: FieldAnalysisResult): boolean => field.encoding === "logarithmic"
   const isSexagesimal = (field: FieldAnalysisResult): boolean => field.encoding === "sexagesimal"
 
+  // Get inference source display info
+  const getInferenceSource = (field: FieldAnalysisResult): { label: string; icon: React.ReactNode; color: string } => {
+    const source = (field as any).inferenceSource || 'llm'
+    switch (source) {
+      case 'guard':
+        return { label: 'Guard', icon: <ShieldCheck className="h-3 w-3" />, color: 'text-red-400' }
+      case 'domain':
+        return { label: 'Domain', icon: <Database className="h-3 w-3" />, color: 'text-purple-400' }
+      case 'name':
+        return { label: 'Name', icon: <FileText className="h-3 w-3" />, color: 'text-blue-400' }
+      case 'value':
+        return { label: 'Value', icon: <Activity className="h-3 w-3" />, color: 'text-yellow-400' }
+      case 'llm':
+        return { label: 'LLM', icon: <Bot className="h-3 w-3" />, color: 'text-zinc-400' }
+      default:
+        return { label: 'Fallback', icon: <AlertTriangle className="h-3 w-3" />, color: 'text-orange-400' }
+    }
+  }
+
+  // Get confidence level
+  const getConfidenceLevel = (field: FieldAnalysisResult): { label: string; color: string } => {
+    const confidence = (field as any).confidence || 0.5
+    if (confidence >= 0.8) return { label: 'High', color: 'text-emerald-400' }
+    if (confidence >= 0.5) return { label: 'Medium', color: 'text-yellow-400' }
+    return { label: 'Low', color: 'text-orange-400' }
+  }
+
+  // Get lock status
+  const getLockStatus = (field: FieldAnalysisResult): { label: string; icon: React.ReactNode; color: string } => {
+    if (isFieldLocked(field)) {
+      return { label: 'Locked', icon: <Lock className="h-3 w-3" />, color: 'text-zinc-500' }
+    }
+    const confidence = (field as any).confidence || 0.5
+    if (confidence < 0.5) {
+      return { label: 'Needs Confirmation', icon: <AlertTriangle className="h-3 w-3" />, color: 'text-amber-400' }
+    }
+    return { label: 'Editable', icon: <Pencil className="h-3 w-3" />, color: 'text-blue-400' }
+  }
+
+  // Get warning message for field
+  const getFieldWarning = (field: FieldAnalysisResult): string | null => {
+    if ((field as any).warning) return (field as any).warning
+    if (field.physicalQuantity === 'dimensionless' && field.reason?.includes('correlation')) {
+      return 'Correlation coefficients are dimensionless [-1, 1]'
+    }
+    if (field.encoding === 'logarithmic') {
+      return 'Logarithmic quantities cannot be converted linearly'
+    }
+    if (field.reason?.includes('cartesian') || field.reason?.includes('gaia_x') || field.reason?.includes('gaia_y') || field.reason?.includes('gaia_z')) {
+      return 'Cartesian coordinate (length, not angle)'
+    }
+    return null
+  }
+
   return (
     <Dialog open={open} onOpenChange={(open) => {
       // Block closing - user must confirm or cancel
@@ -161,10 +215,11 @@ export function UnitSelectionDialog({
                 <tr className="border-b border-zinc-700 bg-zinc-800">
                   <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Field Name</th>
                   <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Physical Quantity</th>
-                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Unit Required</th>
-                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">AI Recommended</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Source</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Confidence</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Status</th>
+                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Recommended</th>
                   <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Final Unit</th>
-                  <th className="text-left py-3 px-4 text-zinc-200 font-semibold whitespace-nowrap">Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -172,19 +227,36 @@ export function UnitSelectionDialog({
                   const isLocked = isFieldLocked(field)
                   const currentUnit = selectedUnits[field.field_name] ?? field.finalUnit ?? null
                   const { units: effectiveUnits } = effectiveByField.get(field.field_name) ?? { units: [] }
-                  const needsConfirmation =
-                    field.unit_required &&
-                    (field.allowed_units?.length ?? 0) > 1 &&
-                    currentUnit === field.recommended_unit
+                  const inferenceSource = getInferenceSource(field)
+                  const confidenceLevel = getConfidenceLevel(field)
+                  const lockStatus = getLockStatus(field)
+                  const warning = getFieldWarning(field)
 
                   const displayName = columnMetadata?.[field.field_name]?.description ?? field.field_name
                   return (
                     <tr key={field.field_name} className="border-b border-zinc-800 hover:bg-zinc-800/50">
                       <td className="py-3 px-4">
-                        <span className="font-medium text-zinc-100">{displayName}</span>
-                        {columnMetadata?.[field.field_name] && (
-                          <span className="ml-2 font-mono text-xs text-zinc-500">{field.field_name}</span>
-                        )}
+                        <div className="flex flex-col">
+                          <span className="font-medium text-zinc-100">{displayName}</span>
+                          {columnMetadata?.[field.field_name] && (
+                            <span className="font-mono text-xs text-zinc-500">{field.field_name}</span>
+                          )}
+                          {warning && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-xs text-amber-400 flex items-center gap-1 mt-1 cursor-help">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Warning
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-sm bg-amber-900 border-amber-700 text-amber-100">
+                                  <p className="text-sm">{warning}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -192,54 +264,49 @@ export function UnitSelectionDialog({
                             {field.physicalQuantity ?? field.semantic_type}
                           </Badge>
                           {isLogarithmic(field) && (
-                            <Badge variant="secondary" className="text-xs bg-zinc-700 text-zinc-300">
-                              Logarithmic (locked)
+                            <Badge variant="secondary" className="text-xs bg-amber-900/50 text-amber-300 border-amber-700">
+                              log
                             </Badge>
                           )}
                           {isSexagesimal(field) && (
-                            <Badge variant="secondary" className="text-xs bg-zinc-700 text-zinc-300">
-                              Sexagesimal (locked)
-                            </Badge>
-                          )}
-                          {needsConfirmation && !isLogarithmic(field) && !isSexagesimal(field) && (
-                            <Badge variant="secondary" className="text-xs bg-amber-900/50 text-amber-300 border-amber-700">
-                              Needs confirmation
+                            <Badge variant="secondary" className="text-xs bg-purple-900/50 text-purple-300 border-purple-700">
+                              sex
                             </Badge>
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-zinc-400">
-                        {field.unit_required ? (
-                          <Badge variant="default" className="text-xs bg-emerald-900/50 text-emerald-300 border-emerald-700">
-                            Yes
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs bg-zinc-700 text-zinc-400">
-                            No (locked)
-                          </Badge>
-                        )}
+                      <td className="py-3 px-4">
+                        <div className={`flex items-center gap-1.5 ${inferenceSource.color}`}>
+                          {inferenceSource.icon}
+                          <span className="text-xs font-medium">{inferenceSource.label}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`text-xs font-medium ${confidenceLevel.color}`}>
+                          {confidenceLevel.label}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className={`flex items-center gap-1.5 ${lockStatus.color}`}>
+                          {lockStatus.icon}
+                          <span className="text-xs">{lockStatus.label}</span>
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         {field.recommended_unit ? (
-                          <div className="flex flex-col gap-1">
-                            <span className="text-sm font-medium text-zinc-100">
-                              {field.recommended_unit}
-                            </span>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="text-xs text-zinc-500 italic cursor-help underline decoration-dotted">
-                                    {field.reason.length > 50
-                                      ? field.reason.substring(0, 50) + "..."
-                                      : field.reason}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-md bg-zinc-800 border-zinc-700 text-zinc-200">
-                                  <p className="text-sm">{field.reason}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm font-medium text-zinc-100 cursor-help">
+                                  {field.recommended_unit}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-md bg-zinc-800 border-zinc-700 text-zinc-200">
+                                <p className="text-sm font-medium mb-1">Reason:</p>
+                                <p className="text-sm text-zinc-300">{field.reason}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         ) : (
                           <span className="text-zinc-500 text-sm">—</span>
                         )}
@@ -297,22 +364,6 @@ export function UnitSelectionDialog({
                             </SelectContent>
                           </Select>
                         )}
-                      </td>
-                      <td className="py-3 px-4 text-zinc-400 text-xs max-w-[200px]">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="cursor-help underline decoration-dotted truncate block">
-                                {field.reason.length > 40
-                                  ? field.reason.substring(0, 40) + "..."
-                                  : field.reason}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-md bg-zinc-800 border-zinc-700 text-zinc-200">
-                              <p className="text-sm">{field.reason}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
                       </td>
                     </tr>
                   )

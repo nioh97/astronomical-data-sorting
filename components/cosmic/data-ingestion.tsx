@@ -604,6 +604,7 @@ export default function DataIngestionSection() {
             headers: parsedData.headers,
             sampleRows: parsedData.rows.slice(0, 3),
             metadata: parsedData.metadata,
+            rawText, // Pass raw text for metadata detection
           })
           fieldAnalysisResult = { fields: fallback.fields, usedFallback: fallback.usedFallback }
         }
@@ -614,6 +615,7 @@ export default function DataIngestionSection() {
           headers: parsedData.headers,
           sampleRows: parsedData.rows.slice(0, 3),
           metadata: parsedData.metadata,
+          rawText, // Pass raw text for metadata detection
         })
         if (cancelRef.current) {
           setUploading(false)

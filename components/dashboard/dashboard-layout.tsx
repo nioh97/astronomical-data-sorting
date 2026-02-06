@@ -33,6 +33,10 @@ const sectionMeta: Record<string, { title: string; description: string }> = {
     title: "AI-Assisted Discovery",
     description: "Statistical insights and predictions",
   },
+  "university-observatory": {
+    title: "University Live Observatory",
+    description: "Simulated institutional observatory telemetry feed",
+  },
 }
 
 interface DashboardLayoutProps {

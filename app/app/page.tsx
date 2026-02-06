@@ -7,6 +7,7 @@ import DataIngestionSection from "@/components/cosmic/data-ingestion"
 import UnifiedRepositorySection from "@/components/cosmic/unified-repository"
 import VisualizationSection from "@/components/cosmic/visualization"
 import InsightsSection from "@/components/cosmic/insights"
+import UniversityLiveObservatory from "@/components/observatory/UniversityLiveObservatory"
 import { DataProvider, useDataContext } from "@/lib/data-context"
 import { FilterProvider } from "@/lib/filters/filter-context"
 import { AppUIProvider } from "@/lib/app-ui-context"
@@ -66,6 +67,13 @@ function DashboardContent() {
       {activeSection === "ai-discovery" && (
         <div className="space-y-6">
           <InsightsSection />
+        </div>
+      )}
+
+      {/* University Observatory section - conditionally rendered */}
+      {activeSection === "university-observatory" && (
+        <div className="space-y-6">
+          <UniversityLiveObservatory />
         </div>
       )}
     </DashboardLayout>
